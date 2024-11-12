@@ -13,6 +13,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    strategy:
+      matrix:
+        architecture: [linux/amd64, linux/arm64]
     steps:
       - uses: actions/checkout@v3
       - uses: docker/setup-qemu-action@v2
@@ -29,7 +32,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           file: ./Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.architecture }}
           push: true
           tags: |
             ghcr.io/c0d3-m4513r/meandtheboisbot:latest
