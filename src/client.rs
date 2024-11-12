@@ -73,9 +73,26 @@ impl serenity::client::EventHandler for Handler {
 }
 
 impl Handler {
+    async fn log_error(&self, ctx: &poise::serenity_prelude::Context, channel: serenity::ChannelId, error: String) {
+        let send_message = serenity::CreateMessage::new()
+            .content(error)
+            .allowed_mentions(serenity::CreateAllowedMentions::new().empty_roles().empty_users());
+        match channel.send_message(&ctx, send_message).await {
+            Ok(_) => {
+                tracing::warn!("Logged error: {error}");
+            }
+            Err(err) => {
+                tracing::error!("Original Error: {error}");
+                tracing::error!("Error sending error message: {err}");
+            }
+        }
+    }
     async fn check_delete_channel(&self, ctx: &poise::serenity_prelude::Context, channel: serenity::ChannelId) {
         if self.ignore_channels.contains(&channel) { return; }
+        if channel == self.creator_channel { return; }
+        //For now only worry about channels created by this bot instance.
         if self.created_channels.lock().await.contains_key(&channel) {
+            //TODO: This is technically not 100% what is intended. If everyone leaves the channel this function will fire. If then someone rejoins and exits before self.delete_delay is up, the channel deletion will not be moved further back.
             let channel = match self.created_channels.lock().await.remove(&channel) {
                 None => {
                     //Channel was already deleted?
@@ -90,6 +107,7 @@ impl Handler {
                         match channel.delete(&ctx).await {
                             Ok(_) => {},
                             Err(err) => {
+                                self.log_error(&ctx, channel.id, format!("There was an error deleting the Channel: {error}")).await;
                                 tracing::error!("Error deleting channel: {err}");
                                 return;
                             }
@@ -99,8 +117,8 @@ impl Handler {
                     }
                 },
                 Err(err) => {
+                    self.log_error(&ctx, channel.id, format!("Error getting members of channel: {err}")).await;
                     self.created_channels.lock().await.insert(channel.id, channel);
-                    tracing::error!("Error getting members of channel: {err}");
                     return;
                 }
             }
@@ -160,16 +178,7 @@ impl Handler {
         match self.guild_id.create_channel(&ctx, new_channel).await {
             Ok(v) => {
                 if let Some(error) = error {
-                    let send_message = serenity::CreateMessage::new()
-                        .content(format!("There was an error getting the Creator's User: {error}"))
-                        .allowed_mentions(serenity::CreateAllowedMentions::new().empty_roles().empty_users());
-                    match v.send_message(&ctx, send_message).await {
-                        Ok(_) => {}
-                        Err(err) => {
-                            tracing::error!("Original Error: There was an error getting the Creator's User : {error}");
-                            tracing::error!("Error sending error message: {err}");
-                        }
-                    }
+                    self.log_error(&ctx, v.id, format!("There was an error getting the Creator's User: {error}")).await;
                 }
                 match self.guild_id.move_member(&ctx, user_id, v.id).await {
                     Ok(_) => {},
@@ -187,9 +196,9 @@ impl Handler {
             }
             Err(err) => {
                 if let Some(error) = error {
-                    tracing::error!("Error getting the Creator's User: {error}");
+                    tracing::error!("Error getting the Creator's User with id {user_id}: {error}");
                 }
-                tracing::error!("Error creating channel: {err}, {err:?}");
+                tracing::error!("Error creating channel for User {user_id}: {err}");
                 return;
             }
         }
