@@ -42,7 +42,8 @@ struct Handler {
     creator_channel: serenity::ChannelId,
     create_category: Option<serenity::ChannelId>,
     ignore_channels: HashSet<serenity::ChannelId>,
-    created_channels: tokio::sync::Mutex<Vec<serenity::GuildChannel>>
+    created_channels: tokio::sync::Mutex<std::collections::HashMap<serenity::ChannelId, serenity::GuildChannel>>,
+    delete_delay: core::time::Duration,
 }
 
 impl serenity::client::EventHandler for Handler {
@@ -74,9 +75,15 @@ impl serenity::client::EventHandler for Handler {
 impl Handler {
     async fn check_delete_channel(&self, ctx: &poise::serenity_prelude::Context, channel: serenity::ChannelId) {
         if self.ignore_channels.contains(&channel) { return; }
-        let mut created_chanels = self.created_channels.lock().await;
-        if let Some(index) = created_chanels.iter().position(|e| e.id == channel) {
-            let channel = created_chanels.swap_remove(index);
+        if self.created_channels.lock().await.contains_key(&channel) {
+            let channel = match self.created_channels.lock().await.remove(&channel) {
+                None => {
+                    //Channel was already deleted?
+                    return;
+                }
+                Some(channel) => channel,
+            };
+            tokio::time::sleep(self.delete_delay).await;
             match channel.members(&ctx) {
                 Ok(members) => {
                     if members.is_empty() {
@@ -87,9 +94,12 @@ impl Handler {
                                 return;
                             }
                         }
+                    } else {
+                        self.created_channels.lock().await.insert(channel.id, channel);
                     }
                 },
                 Err(err) => {
+                    self.created_channels.lock().await.insert(channel.id, channel);
                     tracing::error!("Error getting members of channel: {err}");
                     return;
                 }
@@ -173,7 +183,7 @@ impl Handler {
                         }
                     }
                 }
-                self.created_channels.lock().await.push(v);
+                self.created_channels.lock().await.insert(v.id, v);
             }
             Err(err) => {
                 if let Some(error) = error {
@@ -212,6 +222,7 @@ pub async fn init_client() -> Client {
             create_category: Some(serenity::ChannelId::new(966080144747933757)),
             ignore_channels: HashSet::from([serenity::ChannelId::new(695720756189069313)]),
             created_channels: Default::default(),
+            delete_delay: core::time::Duration::from_secs(15),
         })
         .await
         .expect("serenity failed sonehow!");
