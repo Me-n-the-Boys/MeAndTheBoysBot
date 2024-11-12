@@ -22,7 +22,6 @@ type Context<'a> = poise::Context<'a, Data, Error>;
 ///Gets the latency of the current shard to discord's gateway.
 #[poise::command(
     slash_command,
-    install_context = "Guild|User",
 )]
 async fn ping(ctx: Context<'_>) -> Result<(), Error> {
     const CONVERSION_STEP:u32 = 1000;

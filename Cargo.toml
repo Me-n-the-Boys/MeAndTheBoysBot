@@ -22,11 +22,7 @@ serde = "1"
 serde_derive = "1"
 serde_json = "1"
 #bot
-serenity = { version = "^0.12", features = ["cache", "framework", "standard_framework", "rustls_backend", "unstable_discord_api"] }
-poise = {version = "0.6.1", features = ["unstable"]}
+serenity = { version = "^0.12", features = ["cache", "framework", "standard_framework", "rustls_backend"] }
+poise = "0.6.1"
 #async main
 tokio = { version = "^1.4", features = ["macros", "signal", "rt-multi-thread"] }
-
-[patch.crates-io]
-serenity = {git = "https://github.com/serenity-rs/serenity.git", rev = "398d406a268e7ffe622b0427af8cc7a5d99b7372"}
-poise = {git = "https://github.com/fgardt/poise.git", rev = "99b11176f4b9389337b94fa113194fc4e45cbf31"}
