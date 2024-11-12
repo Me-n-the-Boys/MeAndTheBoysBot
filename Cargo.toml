@@ -1,0 +1,32 @@
+[package]
+name = "untitled"
+version = "0.1.0"
+authors = ["C0D3 M4513R <28912031+C0D3-M4513R@users.noreply.github.com>"]
+edition = "2021"
+#include = ["src/**"]
+#include = ["test/**"]
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+#.env support
+dotenv = "0.15"
+#logging
+tracing = {version = "0.1", features = ["attributes"]}
+tracing-attributes = "0.1"
+tracing-subscriber = "0.3"
+
+#eaze-tracing-honeycomb = "0.2.1-eaze.7"
+#libhoney-rust = "0.1.6"
+
+serde = "1"
+serde_derive = "1"
+serde_json = "1"
+#bot
+serenity = { version = "^0.12", features = ["cache", "framework", "standard_framework", "rustls_backend", "unstable_discord_api"] }
+poise = {version = "0.6.1", features = ["unstable"]}
+#async main
+tokio = { version = "^1.4", features = ["macros", "signal", "rt-multi-thread"] }
+
+[patch.crates-io]
+serenity = {git = "https://github.com/serenity-rs/serenity.git", rev = "398d406a268e7ffe622b0427af8cc7a5d99b7372"}
+poise = {git = "https://github.com/fgardt/poise.git", rev = "99b11176f4b9389337b94fa113194fc4e45cbf31"}
