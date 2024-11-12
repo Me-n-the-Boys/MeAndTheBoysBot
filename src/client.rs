@@ -141,7 +141,7 @@ impl Handler {
         let mut error = None;
         match user_id.to_user(&ctx).await{
             Ok(user) => {
-                new_channel = new_channel.name(format!("{}'s Channel", user.name));
+                new_channel = new_channel.name(format!("{}'s Channel", user.global_name.unwrap_or(user.name)));
             },
             Err(v) => {
                 error = Some(v);
