@@ -38,7 +38,6 @@ async fn ping(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 struct Handler {
-    self_id: serenity::UserId,
     guild_id: serenity::GuildId,
     creator_channel: serenity::ChannelId,
     create_category: Option<serenity::ChannelId>,
@@ -128,15 +127,6 @@ impl Handler {
                         serenity::all::Permissions::MANAGE_CHANNELS |
                         serenity::all::Permissions::MANAGE_ROLES |
                         serenity::all::Permissions::MOVE_MEMBERS |
-                        serenity::all::Permissions::VIEW_CHANNEL,
-                    deny: serenity::all::Permissions::empty(),
-                    kind: serenity::model::channel::PermissionOverwriteType::Member(self.self_id),
-                },
-                serenity::model::channel::PermissionOverwrite {
-                    allow:
-                        serenity::all::Permissions::MANAGE_CHANNELS |
-                        serenity::all::Permissions::MANAGE_ROLES |
-                        serenity::all::Permissions::MOVE_MEMBERS |
                         serenity::all::Permissions::VIEW_CHANNEL |
                         serenity::all::Permissions::CONNECT,
                     deny: serenity::all::Permissions::empty(),
@@ -217,7 +207,6 @@ pub async fn init_client() -> Client {
     let mut client = serenity::Client::builder(&token, GatewayIntents::default())
         .framework(framework)
         .event_handler(Handler{
-            self_id: serenity::UserId::new(1305990739137921034),
             guild_id: serenity::GuildId::new(695718765119275109),
             creator_channel: serenity::ChannelId::new(1241371878761824356),
             create_category: Some(serenity::ChannelId::new(966080144747933757)),
