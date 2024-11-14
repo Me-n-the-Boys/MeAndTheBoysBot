@@ -93,6 +93,8 @@ impl serenity::client::EventHandler for Handler {
                         tracing::info!("Someone joined Channel {channel}");
                         *delete = None;
                         return;
+                    } else {
+                        self.check_delete_channels(ctx, _old_state).await
                     }
                 },
                 None => self.check_delete_channels(ctx, _old_state).await,
