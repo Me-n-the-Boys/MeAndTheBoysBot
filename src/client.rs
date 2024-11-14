@@ -77,12 +77,6 @@ impl serenity::client::EventHandler for Handler {
             if new_state.guild_id != Some(self.guild_id) {
                 return;
             }
-            //Prevent deleting AFK channel
-            if let Some(channel) = new_state.channel_id {
-                if self.ignore_channels.contains(&channel) {
-                    return;
-                }
-            }
             match new_state.channel_id {
                 Some(channel) => {
                     if new_state.channel_id == Some(self.creator_channel) {
