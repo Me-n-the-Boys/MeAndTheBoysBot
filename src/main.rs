@@ -1,7 +1,5 @@
 mod client;
 
-use std::thread::sleep;
-use std::time::Duration;
 use tokio::runtime::Runtime;
 use tracing::instrument;
 use tracing::level_filters::LevelFilter;
@@ -38,9 +36,7 @@ fn main() {
 
     tracing::subscriber::set_global_default(subscriber).expect("setting global default failed");
 
-    start_client();
-
-    sleep(Duration::from_secs(10))
+    start_client()
 }
 
 pub fn is_logging_enabled(key: String) -> bool {
@@ -54,5 +50,5 @@ fn start_client() {
     // eaze_tracing_honeycomb::register_dist_tracing_root(eaze_tracing_honeycomb::TraceId::new(), None).unwrap();
     tracing::info!("Client Startup");
     get_rt().block_on(client::init_client());
-    tracing::debug!("Bye!");
+    tracing::info!("Bye!");
 }
