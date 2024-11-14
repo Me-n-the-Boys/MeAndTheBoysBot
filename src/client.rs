@@ -228,13 +228,23 @@ impl Handler {
                         }
                     }
                 } else {
-                    let channel = channel.id;
                     #[cfg(debug_assertions)]
-                    tracing::info!("Channel {channel} is not empty?");
+                    {
+                        let channel = {
+                            let channel_id = channel.id;
+                            drop(channel);
+                            channel_id
+                        };
+                        tracing::info!("Channel {channel} is not empty?");
+                    }
                 }
             },
             Err(err) => {
-                let channel = channel.id;
+                let channel = {
+                    let channel_id = channel.id;
+                    drop(channel);
+                    channel_id
+                };
                 self.log_error(&ctx, channel, format!("Error getting members of channel {channel}: {err}")).await;
                 return;
             }
