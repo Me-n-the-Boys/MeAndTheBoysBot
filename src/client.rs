@@ -411,14 +411,11 @@ pub async fn init_client() -> Client {
         (sender, tokio::spawn(async move{
             let mut cache = cache;
             loop {
-                match receiver.try_recv() {
-                    Ok(()) | Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
-                        return cache;
-                    }
-                    Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {},
-                }
-                interval.tick().await;
-                cache.save().await;
+                tokio::select!(
+                    biased;
+                    _ = &mut receiver => return cache,
+                    _ = interval.tick() => cache.save().await,
+                )
             }
         }))
     };
