@@ -175,6 +175,8 @@ impl Handler {
         tracing::info!("Checking channel {channel} for deletion");
         let instant = match self.mark_delete_channels.write().await.get_mut(&channel) {
             None => {
+                #[cfg(debug_assertions)]
+                tracing::info!("Channel {channel} was already deleted?");
                 //Channel was already deleted?
                 return;
             }
@@ -214,6 +216,8 @@ impl Handler {
         let channel_lock = self.created_channels.read().await;
         let channel = match channel_lock.get(&channel) {
             None => {
+                #[cfg(debug_assertions)]
+                tracing::info!("Channel {channel} was already deleted or shouldn't be deleted.");
                 //Channel was already deleted or shouldn't be deleted
                 return;
             }
