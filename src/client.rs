@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use poise::{CreateReply, serenity_prelude as serenity};
 use serenity::gateway::ShardManager;
 use serenity::utils::{validate_token};
@@ -39,17 +39,43 @@ async fn ping(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-#[derive(Clone, serde::Deserialize, serde::Serialize)]
+#[derive(serde::Deserialize)]
+#[serde(from="HandlerSerializable")]
 struct Handler {
     guild_id: serenity::GuildId,
     creator_channel: serenity::ChannelId,
     create_category: Option<serenity::ChannelId>,
     ignore_channels: HashSet<serenity::ChannelId>,
     delete_non_created_channels: bool,
-    created_channels: dashmap::DashMap<serenity::ChannelId, serenity::GuildChannel>,
+    created_channels: tokio::sync::RwLock<HashMap<serenity::ChannelId, serenity::GuildChannel>>,
     #[serde(skip)]
-    mark_delete_channels: dashmap::DashMap<serenity::ChannelId, Option<tokio::time::Instant>>,
+    mark_delete_channels: tokio::sync::RwLock<HashMap<serenity::ChannelId, Option<tokio::time::Instant>>>,
     delete_delay: core::time::Duration,
+}
+#[derive(Clone, serde::Deserialize, serde::Serialize)]
+struct HandlerSerializable {
+    guild_id: serenity::GuildId,
+    creator_channel: serenity::ChannelId,
+    create_category: Option<serenity::ChannelId>,
+    ignore_channels: HashSet<serenity::ChannelId>,
+    delete_non_created_channels: bool,
+    created_channels: HashMap<serenity::ChannelId, serenity::GuildChannel>,
+    delete_delay: core::time::Duration,
+}
+impl From<HandlerSerializable> for Handler {
+    fn from(value: HandlerSerializable) -> Self {
+        let mark_delete_channels = value.created_channels.keys().map(|k|(*k, None)).collect::<HashMap<_, _>>();
+        Self {
+            guild_id: value.guild_id,
+            creator_channel: value.creator_channel,
+            create_category: value.create_category,
+            ignore_channels: value.ignore_channels,
+            delete_non_created_channels: value.delete_non_created_channels,
+            created_channels: tokio::sync::RwLock::from(value.created_channels),
+            mark_delete_channels: tokio::sync::RwLock::from(mark_delete_channels),
+            delete_delay: value.delete_delay,
+        }
+    }
 }
 
 impl serenity::client::EventHandler for Handler {
@@ -74,12 +100,17 @@ impl serenity::client::EventHandler for Handler {
                     if new_state.channel_id == Some(self.creator_channel) {
                         self.create_channel(ctx, new_state.user_id).await;
                         return;
-                    } else if let Some(mut delete) = self.mark_delete_channels.get_mut(&channel) {
-                        #[cfg(debug_assertions)]
-                        tracing::info!("Someone joined Channel {channel}");
-                        *delete.value_mut() = None;
-                        return;
                     } else {
+                        //This needs to be in a separate scope, to make sure, that the write guard is getting dropped before the check_delete_channels call
+                        {
+                            let mut guard = self.mark_delete_channels.write().await;
+                            if let Some(delete) = guard.get_mut(&channel) {
+                                #[cfg(debug_assertions)]
+                                tracing::info!("Someone joined Channel {channel}");
+                                *delete = None;
+                                return;
+                            }
+                        }
                         self.check_delete_channels(ctx, _old_state).await
                     }
                 },
@@ -87,8 +118,19 @@ impl serenity::client::EventHandler for Handler {
             }
         })
     }
+
+    fn shard_stage_update<'life0, 'async_trait>(&'life0 self, ctx: poise::serenity_prelude::Context, event: serenity::gateway::ShardStageUpdateEvent)
+                                                -> std::pin::Pin<Box<dyn std::future::Future<Output=()> + Send + 'async_trait>>
+    where Self: 'async_trait, 'life0: 'async_trait
+    {
+        Box::pin(async move {
+            if event.new != event.old && event.new == serenity::gateway::ConnectionStage::Connected {
+                self.check_delete_channels(ctx, None).await;
+            }
+        })
+    }
 }
-impl Default for Handler {
+impl Default for HandlerSerializable {
     fn default() -> Self {
         Self {
             guild_id: serenity::GuildId::new(695718765119275109),
@@ -97,12 +139,27 @@ impl Default for Handler {
             delete_non_created_channels: false,
             ignore_channels: HashSet::from([serenity::ChannelId::new(695720756189069313)]),
             created_channels: Default::default(),
-            mark_delete_channels: Default::default(),
             delete_delay: core::time::Duration::from_secs(15),
         }
     }
 }
+impl Default for Handler {
+    fn default() -> Self {
+        Self::from(HandlerSerializable::default())
+    }
+}
 impl Handler {
+    async fn to_serializable(&self) -> HandlerSerializable {
+        HandlerSerializable {
+            guild_id: self.guild_id,
+            creator_channel: self.creator_channel,
+            create_category: self.create_category,
+            ignore_channels: self.ignore_channels.clone(),
+            delete_non_created_channels: self.delete_non_created_channels,
+            created_channels: self.created_channels.read().await.clone(),
+            delete_delay: self.delete_delay,
+        }
+    }
     async fn log_error(&self, ctx: &poise::serenity_prelude::Context, channel: serenity::ChannelId, error: String) {
         let send_message = serenity::CreateMessage::new()
             .content(error.clone())
@@ -128,7 +185,7 @@ impl Handler {
             tracing::info!("Channel {channel} is the creator channel");
             return;
         }
-        if !self.delete_non_created_channels && !self.created_channels.contains_key(&channel) {
+        if !self.delete_non_created_channels && !self.created_channels.read().await.contains_key(&channel) {
             #[cfg(debug_assertions)]
             tracing::info!("Channel {channel} is not created by this bot instance and we don't delete non-created channels");
             return;
@@ -136,14 +193,14 @@ impl Handler {
 
         #[cfg(debug_assertions)]
         tracing::info!("Channel {channel} might have some need for deletion");
-        let instant = match self.mark_delete_channels.get_mut(&channel) {
+        let instant = match self.mark_delete_channels.write().await.get_mut(&channel) {
             None => {
                 #[cfg(debug_assertions)]
                 tracing::info!("Channel {channel} was already deleted?");
                 //Channel was already deleted?
                 return;
             }
-            Some(mut deletion) => {
+            Some(deletion) => {
                 if deletion.is_some() {
                     #[cfg(debug_assertions)]
                     tracing::info!("Channel {channel} is already marked for deletion");
@@ -158,7 +215,7 @@ impl Handler {
         #[cfg(debug_assertions)]
         tracing::info!("Sleeping for channel {channel} for deletion");
         tokio::time::sleep_until(instant).await;
-        match self.mark_delete_channels.get(&channel).map(|r|r.value().clone()) {
+        match self.mark_delete_channels.read().await.get(&channel) {
             Some(None) | None => {
                 #[cfg(debug_assertions)]
                 tracing::info!("Channel {channel} was rejoined");
@@ -166,48 +223,42 @@ impl Handler {
                 return;
             }
             Some(Some(deletion)) => {
-                if deletion != instant {
+                if *deletion != instant {
                     #[cfg(debug_assertions)]
                     tracing::info!("Channel {channel} was rejoined and lefted. Channel Deletion is not our responsibility anymore.");
                     //Channel was rejoined
                     return;
                 }
-                #[cfg(debug_assertions)]
-                tracing::info!("Actually deleting Channel {channel}.");
             },
         };
-        let channel = match self.created_channels.get(&channel) {
+        let members = match self.created_channels.read().await.get(&channel) {
             None => {
                 #[cfg(debug_assertions)]
                 tracing::info!("Channel {channel} was already deleted or shouldn't be deleted.");
                 //Channel was already deleted or shouldn't be deleted
                 return;
             }
-            Some(channel) => channel,
+            Some(channel) => {
+                if channel.parent_id != self.create_category {
+                    #[cfg(debug_assertions)]
+                    {
+                    let channel = channel.id;
+                    tracing::info!("Channel {channel} is not in the correct Category, to be deleted.");
+                    }
+                    return;
+                };
+
+                channel.members(&ctx)
+            },
         };
 
-        if channel.parent_id != self.create_category {
-            #[cfg(debug_assertions)]
-            {
-                let channel = channel.id;
-                tracing::info!("Channel {channel} is not in the correct Category, to be deleted.");
-            }
-            return;
-        }
-
-        match channel.members(&ctx) {
+        match members {
             Ok(members) => {
                 if members.is_empty() {
                     let channel = {
-                        let channel_id = channel.id;
-                        drop(channel);
-                        channel_id
-                    };
-                    #[cfg(debug_assertions)]
-                    tracing::info!("Channel {channel} is empty.");
-                    let channel = {
-                        self.mark_delete_channels.remove(&channel);
-                        match self.created_channels.remove(&channel) {
+                        let (mut created_channels, mut mark_delete_channels) = tokio::join!(self.created_channels.write(), self.mark_delete_channels.write());
+                        mark_delete_channels.remove(&channel);
+                        match created_channels.remove(&channel) {
                             None => {
                                 #[cfg(debug_assertions)]
                                 tracing::info!("Channel {channel} is already deleted? WTF?");
@@ -215,7 +266,7 @@ impl Handler {
                                 return;
                             }
                             Some(channel) => channel,
-                        }.1
+                        }
                     };
                     #[cfg(debug_assertions)]
                     tracing::info!("Channel {channel} Deleted!");
@@ -229,26 +280,18 @@ impl Handler {
                     }
                 } else {
                     #[cfg(debug_assertions)]
-                    {
-                        let channel = {
-                            let channel_id = channel.id;
-                            drop(channel);
-                            channel_id
-                        };
-                        tracing::info!("Channel {channel} is not empty?");
-                    }
+                    tracing::info!("Channel {channel} is not empty?");
+                    return;
                 }
             },
             Err(err) => {
-                let channel = {
-                    let channel_id = channel.id;
-                    drop(channel);
-                    channel_id
-                };
                 self.log_error(&ctx, channel, format!("Error getting members of channel {channel}: {err}")).await;
                 return;
             }
         }
+
+        #[cfg(debug_assertions)]
+        tracing::info!("Actually deleting Channel {channel}.");
     }
     async fn check_delete_channels(&self, ctx: poise::serenity_prelude::Context, old_state: std::option::Option<serenity::all::VoiceState>) {
         let old_channel = old_state.as_ref().map(|old_state| old_state.channel_id).flatten();
@@ -285,7 +328,9 @@ impl Handler {
         };
         let created_channels = match created_chanels {
             Some(v) => v,
-            None => self.mark_delete_channels.iter().map(|r|*r.key()).collect::<HashSet<_>>(),
+            None => {
+                self.created_channels.read().await.keys().copied().collect::<HashSet<_>>()
+            },
         };
         let difference = created_channels.difference(&visited_channels);
         #[cfg(debug_assertions)]
@@ -344,8 +389,11 @@ impl Handler {
                 let channel = v.id;
                 #[cfg(debug_assertions)]
                 tracing::info!("Created channel {channel}, but did not insert yet");
-                self.created_channels.insert(channel, v);
-                self.mark_delete_channels.insert(channel, None);
+                {
+                    let (mut created_channels, mut mark_delete_channels) = tokio::join!(self.created_channels.write(), self.mark_delete_channels.write());
+                    created_channels.insert(channel, v);
+                    mark_delete_channels.insert(channel, None);
+                }
                 #[cfg(debug_assertions)]
                 tracing::info!("Created channel {channel}");
             }
@@ -361,11 +409,18 @@ impl Handler {
 }
 #[derive(Default, serde::Deserialize, serde::Serialize)]
 struct Cache{
-    handler: Arc<Handler>,
+    handler: HandlerSerializable,
+    #[serde(skip)]
+    handler_arc: Arc<Handler>,
 }
 
 impl Cache {
     async fn save(&mut self) {
+        #[cfg(debug_assertions)]
+        tracing::info!("Serializing handler");
+        self.handler = self.handler_arc.to_serializable().await;
+        #[cfg(debug_assertions)]
+        tracing::info!("Serialized handler");
         let serialized = match serde_json::to_vec(&self) {
             Err(v) => {
                 tracing::error!("Error serializing cache: {v}");
@@ -413,10 +468,9 @@ pub async fn init_client() -> Client {
             ).inspect_err(|err|tracing::info!("Error reading cache. Falling back to Defaults. Error: {err}"))
             .unwrap_or_default();
 
-    let handler = Arc::make_mut(&mut cache.handler);
-    handler.mark_delete_channels = dashmap::DashMap::from_iter(handler.created_channels.iter().map(|r|(*r.key(), None)));
     tracing::info!("Got Cached Creation Channels: {:?}", cache.handler.created_channels);
-    let handler = cache.handler.clone();
+    cache.handler_arc = Arc::new(cache.handler.clone().into());
+    let handler = cache.handler_arc.clone();
 
     let (sender, saver) = {
         let (sender, mut receiver) = tokio::sync::oneshot::channel::<()>();
