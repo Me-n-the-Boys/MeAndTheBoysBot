@@ -258,7 +258,7 @@ impl Handler {
         tracing::info!("Channel {channel} might have some need for deletion");
         let instant = match self.mark_delete_channels.write().await.get_mut(&channel) {
             None => {
-                tracing::info!("Channel {channel} was already deleted?");
+                tracing::warn!("Channel {channel} was already deleted?");
                 //Channel was already deleted?
                 return;
             }
@@ -334,6 +334,23 @@ impl Handler {
                     }
                 } else {
                     tracing::info!("Channel {channel} is not empty?");
+                    match { self.mark_delete_channels.write().await.get_mut(&channel) } {
+                        None => {
+                            tracing::warn!("Channel {channel} was already deleted?");
+                            //Channel was already deleted?
+                            return;
+                        }
+                        Some(deletion) => {
+                            if let Some(deletion) = deletion {
+                                if *deletion != instant {
+                                    tracing::warn!("Channel {channel} was rejoined and lefted. Channel Deletion is not our responsibility anymore. How did we get here though?");
+                                    //Channel was rejoined
+                                    return;
+                                }
+                            }
+                            *deletion = None;
+                        },
+                    };
                     return;
                 }
             },
