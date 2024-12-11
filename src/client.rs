@@ -242,17 +242,14 @@ impl Handler {
     }
     async fn check_delete_channel(&self, ctx: &poise::serenity_prelude::Context, channel: serenity::ChannelId) {
         if self.ignore_channels.contains(&channel) {
-            #[cfg(debug_assertions)]
             tracing::info!("Channel {channel} is ignored");
             return;
         }
         if channel == self.creator_channel {
-            #[cfg(debug_assertions)]
             tracing::info!("Channel {channel} is the creator channel");
             return;
         }
         if !self.delete_non_created_channels && !self.created_channels.read().await.contains_key(&channel) {
-            #[cfg(debug_assertions)]
             tracing::info!("Channel {channel} is not created by this bot instance and we don't delete non-created channels");
             return;
         }
@@ -261,14 +258,12 @@ impl Handler {
         tracing::info!("Channel {channel} might have some need for deletion");
         let instant = match self.mark_delete_channels.write().await.get_mut(&channel) {
             None => {
-                #[cfg(debug_assertions)]
                 tracing::info!("Channel {channel} was already deleted?");
                 //Channel was already deleted?
                 return;
             }
             Some(deletion) => {
                 if deletion.is_some() {
-                    #[cfg(debug_assertions)]
                     tracing::info!("Channel {channel} is already marked for deletion");
                     return;
                 }
@@ -278,19 +273,16 @@ impl Handler {
             },
         };
 
-        #[cfg(debug_assertions)]
         tracing::info!("Sleeping for channel {channel} for deletion");
         tokio::time::sleep_until(instant).await;
         match self.mark_delete_channels.read().await.get(&channel) {
             Some(None) | None => {
-                #[cfg(debug_assertions)]
                 tracing::info!("Channel {channel} was rejoined");
                 //Channel shouldn't be deleted
                 return;
             }
             Some(Some(deletion)) => {
                 if *deletion != instant {
-                    #[cfg(debug_assertions)]
                     tracing::info!("Channel {channel} was rejoined and lefted. Channel Deletion is not our responsibility anymore.");
                     //Channel was rejoined
                     return;
@@ -299,14 +291,12 @@ impl Handler {
         };
         let members = match self.created_channels.read().await.get(&channel) {
             None => {
-                #[cfg(debug_assertions)]
                 tracing::info!("Channel {channel} was already deleted or shouldn't be deleted.");
                 //Channel was already deleted or shouldn't be deleted
                 return;
             }
             Some(channel) => {
                 if channel.parent_id != self.create_category {
-                    #[cfg(debug_assertions)]
                     {
                     let channel = channel.id;
                     tracing::info!("Channel {channel} is not in the correct Category, to be deleted.");
@@ -326,7 +316,6 @@ impl Handler {
                         mark_delete_channels.remove(&channel);
                         match created_channels.remove(&channel) {
                             None => {
-                                #[cfg(debug_assertions)]
                                 tracing::info!("Channel {channel} is already deleted? WTF?");
                                 //Channel was already deleted or shouldn't be deleted
                                 return;
@@ -334,7 +323,6 @@ impl Handler {
                             Some(channel) => channel,
                         }
                     };
-                    #[cfg(debug_assertions)]
                     tracing::info!("Channel {channel} Deleted!");
                     match channel.delete(&ctx).await {
                         Ok(_) => {},
@@ -345,7 +333,6 @@ impl Handler {
                         }
                     }
                 } else {
-                    #[cfg(debug_assertions)]
                     tracing::info!("Channel {channel} is not empty?");
                     return;
                 }
@@ -356,13 +343,11 @@ impl Handler {
             }
         }
 
-        #[cfg(debug_assertions)]
         tracing::info!("Actually deleting Channel {channel}.");
     }
     async fn check_delete_channels(self: &Arc<Self>, ctx: &poise::serenity_prelude::Context, old_state: std::option::Option<serenity::all::VoiceState>) {
         let old_channel = old_state.as_ref().map(|old_state| old_state.channel_id).flatten();
         if let Some(old_channel) = old_channel {
-            #[cfg(debug_assertions)]
             tracing::info!("Checking Channel for deletion: {old_channel}");
             self.check_delete_channel(&ctx, old_channel).await;
         }
@@ -399,7 +384,6 @@ impl Handler {
             },
         };
         let difference = created_channels.difference(&visited_channels);
-        #[cfg(debug_assertions)]
         tracing::info!("Checking Channels for deletion: {difference:?}");
         for i in difference {
             self.check_delete_channel(&ctx, *i).await;
@@ -453,14 +437,12 @@ impl Handler {
                     }
                 }
                 let channel = v.id;
-                #[cfg(debug_assertions)]
                 tracing::info!("Created channel {channel}, but did not insert yet");
                 {
                     let (mut created_channels, mut mark_delete_channels) = tokio::join!(self.created_channels.write(), self.mark_delete_channels.write());
                     created_channels.insert(channel, v);
                     mark_delete_channels.insert(channel, None);
                 }
-                #[cfg(debug_assertions)]
                 tracing::info!("Created channel {channel}");
             }
             Err(err) => {
@@ -482,10 +464,8 @@ struct Cache{
 
 impl Cache {
     async fn save(&mut self) {
-        #[cfg(debug_assertions)]
         tracing::info!("Serializing handler");
         self.handler = self.handler_arc.to_serializable().await;
-        #[cfg(debug_assertions)]
         tracing::info!("Serialized handler");
         let serialized = match serde_json::to_vec(&self) {
             Err(v) => {
@@ -496,7 +476,6 @@ impl Cache {
         };
         match tokio::fs::write(CACHE_PATH, serialized).await {
             Ok(_) => {
-                #[cfg(debug_assertions)]
                 tracing::info!("Cache saved");
             },
             Err(err) => {
@@ -556,7 +535,7 @@ pub async fn init_client() -> Client {
 
     let mut client = serenity::Client::builder(&token, GatewayIntents::default())
         .framework(framework)
-        .event_handler_arc(handler.clone())
+        .event_handler(handler.clone())
         .await
         .expect("serenity failed sonehow!");
 
