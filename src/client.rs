@@ -5,7 +5,7 @@ use serenity::utils::{validate_token};
 use serenity::prelude::TypeMapKey;
 use serenity::Client;
 use std::default::Default;
-use std::ops::Add;
+use std::ops::{Add, Deref, DerefMut};
 use std::sync::Arc;
 use std::time::Duration;
 use serenity::all::GatewayIntents;
@@ -50,6 +50,8 @@ struct Handler {
     created_channels: tokio::sync::RwLock<HashMap<serenity::ChannelId, serenity::GuildChannel>>,
     #[serde(skip)]
     mark_delete_channels: tokio::sync::RwLock<HashMap<serenity::ChannelId, Option<tokio::time::Instant>>>,
+    #[serde(skip)]
+    incremental_check: tokio::sync::RwLock<Option<(tokio::task::JoinHandle<()>, tokio::sync::oneshot::Sender<()>)>>,
     delete_delay: core::time::Duration,
 }
 #[derive(Clone, serde::Deserialize, serde::Serialize)]
@@ -73,18 +75,31 @@ impl From<HandlerSerializable> for Handler {
             delete_non_created_channels: value.delete_non_created_channels,
             created_channels: tokio::sync::RwLock::from(value.created_channels),
             mark_delete_channels: tokio::sync::RwLock::from(mark_delete_channels),
+            incremental_check: Default::default(),
             delete_delay: value.delete_delay,
         }
     }
 }
-
-impl serenity::client::EventHandler for Handler {
+#[derive(Clone, Default)]
+struct HandlerWrapper(Arc<Handler>);
+impl Deref for HandlerWrapper {
+    type Target = Arc<Handler>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl DerefMut for HandlerWrapper {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+impl serenity::client::EventHandler for HandlerWrapper {
     fn cache_ready<'life0, 'async_trait>(&'life0 self, ctx: poise::serenity_prelude::Context, _: Vec<serenity::GuildId>)
     -> std::pin::Pin<Box<dyn std::future::Future<Output=()> + Send + 'async_trait>>
     where Self: 'async_trait, 'life0: 'async_trait
     {
         Box::pin(async move {
-            self.check_delete_channels(ctx, None).await;
+            self.check_delete_channels(&ctx, None).await;
         })
     }
     fn voice_state_update<'life0, 'async_trait>(&'life0 self, ctx: poise::serenity_prelude::Context, _old_state: std::option::Option<serenity::all::VoiceState>, new_state: serenity::all::VoiceState)
@@ -111,10 +126,10 @@ impl serenity::client::EventHandler for Handler {
                                 return;
                             }
                         }
-                        self.check_delete_channels(ctx, _old_state).await
+                        self.check_delete_channels(&ctx, _old_state).await
                     }
                 },
-                None => self.check_delete_channels(ctx, _old_state).await,
+                None => self.check_delete_channels(&ctx, _old_state).await,
             }
         })
     }
@@ -124,10 +139,37 @@ impl serenity::client::EventHandler for Handler {
     where Self: 'async_trait, 'life0: 'async_trait
     {
         Box::pin(async move {
-            if event.new != event.old && event.new == serenity::gateway::ConnectionStage::Connected {
-                self.check_delete_channels(ctx, None).await;
+            match event.new {
+                serenity::gateway::ConnectionStage::Connected => {
+                    let slf = self.clone();
+                    let ctx_clone = ctx.clone();
+                    let (sender, mut receiver) = tokio::sync::oneshot::channel();
+                    let task = tokio::spawn(async move {
+                        //Interval is every 15 minutes
+                        let mut inc = tokio::time::interval(core::time::Duration::from_secs(15*60));
+                        inc.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                        loop {
+                            tokio::select!(
+                                biased;
+                                _ = &mut receiver => {
+                                    return;
+                                }
+                                _ = inc.tick() => {
+                                    tracing::info!("Incremental Check Start");
+                                    slf.check_delete_channels(&ctx_clone, None).await;
+                                    tracing::info!("Incremental Check Done");
+                                },
+                            )
+                        }
+                    });
+                    Handler::end_incremental_check_inner(self.incremental_check.write().await.replace((task, sender))).await;
+                }
+                serenity::gateway::ConnectionStage::Disconnected => self.end_incremental_check().await,
+                _ => {
+
+                }
             }
-        })
+       })
     }
 }
 impl Default for HandlerSerializable {
@@ -149,6 +191,30 @@ impl Default for Handler {
     }
 }
 impl Handler {
+    async fn end_incremental_check(&self) {
+        Self::end_incremental_check_inner({
+            self.incremental_check.write().await.take()
+        }).await
+    }
+    async fn end_incremental_check_inner(task: Option<(tokio::task::JoinHandle<()>, tokio::sync::oneshot::Sender<()>)>) {
+        match task {
+            Some((handle, sender)) => {
+                match sender.send(()){
+                    Ok(()) => {},
+                    Err(()) => {
+                        tracing::error!("Error sending termination signal to incremental check thread");
+                    }
+                };
+                match handle.await {
+                    Ok(()) => {}
+                    Err(err) => {
+                        tracing::error!("Incremental check thread panicked: {err}");
+                    }
+                }
+            }
+            None => {}
+        }
+    }
     async fn to_serializable(&self) -> HandlerSerializable {
         HandlerSerializable {
             guild_id: self.guild_id,
@@ -293,7 +359,7 @@ impl Handler {
         #[cfg(debug_assertions)]
         tracing::info!("Actually deleting Channel {channel}.");
     }
-    async fn check_delete_channels(&self, ctx: poise::serenity_prelude::Context, old_state: std::option::Option<serenity::all::VoiceState>) {
+    async fn check_delete_channels(self: &Arc<Self>, ctx: &poise::serenity_prelude::Context, old_state: std::option::Option<serenity::all::VoiceState>) {
         let old_channel = old_state.as_ref().map(|old_state| old_state.channel_id).flatten();
         if let Some(old_channel) = old_channel {
             #[cfg(debug_assertions)]
@@ -411,7 +477,7 @@ impl Handler {
 struct Cache{
     handler: HandlerSerializable,
     #[serde(skip)]
-    handler_arc: Arc<Handler>,
+    handler_arc: HandlerWrapper,
 }
 
 impl Cache {
@@ -469,7 +535,7 @@ pub async fn init_client() -> Client {
             .unwrap_or_default();
 
     tracing::info!("Got Cached Creation Channels: {:?}", cache.handler.created_channels);
-    cache.handler_arc = Arc::new(cache.handler.clone().into());
+    cache.handler_arc = HandlerWrapper(Arc::new(cache.handler.clone().into()));
     let handler = cache.handler_arc.clone();
 
     let (sender, saver) = {
