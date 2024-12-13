@@ -1,19 +1,12 @@
 FROM rust:alpine AS builder
 RUN apk add musl-dev
 WORKDIR /rust-dc-bot
-#build layer with dummy project first, to cache dependencies
-ADD Cargo.* .
-RUN \
-    mkdir src && \
-    echo 'fn main() {}' > src/main.rs && \
-    cargo build --release && \
-    rm -Rvf src
-#actually build the application now
-ADD src/ src/
-RUN touch src/main.rs && cargo build --release
+COPY Cargo.lock Cargo.toml dummy.rs ./
+RUN mkdir .cargo && cargo vendor > .cargo/config.toml && cargo build --bin dummy --release
+COPY src/ src/
+RUN cargo build --release
 
-#FROM alpine:latest
 FROM scratch
-COPY --from=builder /rust-dc-bot/target/release/untitled /untitled
+COPY --from=builder /rust-dc-bot/target/release/me-and-the-boys-dcbot /me-and-the-boys-dcbot
 WORKDIR "/data"
-CMD ["/untitled"]
+CMD ["/me-and-the-boys-dcbot"]

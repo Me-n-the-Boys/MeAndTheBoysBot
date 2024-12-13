@@ -931,6 +931,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
 
 [[package]]
+name = "me-and-the-boys-dcbot"
+version = "0.1.0"
+dependencies = [
+ "dashmap 6.1.0",
+ "dotenv",
+ "poise",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "serenity",
+ "tokio",
+ "tracing",
+ "tracing-attributes",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "memchr"
 version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1977,23 +1994,6 @@ name = "unicode-ident"
 version = "1.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "adb9e6ca4f869e1180728b7950e35922a7fc6397f7b641499e8f3ef06e50dc83"
-
-[[package]]
-name = "untitled"
-version = "0.1.0"
-dependencies = [
- "dashmap 6.1.0",
- "dotenv",
- "poise",
- "serde",
- "serde_derive",
- "serde_json",
- "serenity",
- "tokio",
- "tracing",
- "tracing-attributes",
- "tracing-subscriber",
-]
 
 [[package]]
 name = "untrusted"
