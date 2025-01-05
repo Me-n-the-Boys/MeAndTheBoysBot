@@ -46,22 +46,22 @@ struct Handler {
     guild_id: serenity::GuildId,
     creator_channel: serenity::ChannelId,
     create_category: Option<serenity::ChannelId>,
-    ignore_channels: HashSet<serenity::ChannelId>,
-    delete_non_created_channels: bool,
+    creator_ignore_channels: HashSet<serenity::ChannelId>,
+    creator_delete_non_created_channels: bool,
     created_channels: tokio::sync::RwLock<HashMap<serenity::ChannelId, serenity::GuildChannel>>,
     #[serde(skip)]
-    mark_delete_channels: tokio::sync::RwLock<HashMap<serenity::ChannelId, Option<tokio::time::Instant>>>,
+    creator_mark_delete_channels: tokio::sync::RwLock<HashMap<serenity::ChannelId, Option<tokio::time::Instant>>>,
     #[serde(skip)]
     incremental_check: tokio::sync::RwLock<Option<(tokio::task::JoinHandle<()>, tokio::sync::oneshot::Sender<()>)>>,
-    delete_delay: core::time::Duration,
+    creator_delete_delay: core::time::Duration,
 }
 #[derive(Clone, serde::Deserialize, serde::Serialize)]
 struct HandlerSerializable {
     guild_id: serenity::GuildId,
     creator_channel: serenity::ChannelId,
     create_category: Option<serenity::ChannelId>,
-    ignore_channels: HashSet<serenity::ChannelId>,
-    delete_non_created_channels: bool,
+    creator_ignore_channels: HashSet<serenity::ChannelId>,
+    creator_delete_non_created_channels: bool,
     created_channels: HashMap<serenity::ChannelId, serenity::GuildChannel>,
     delete_delay: core::time::Duration,
 }
@@ -72,12 +72,12 @@ impl From<HandlerSerializable> for Handler {
             guild_id: value.guild_id,
             creator_channel: value.creator_channel,
             create_category: value.create_category,
-            ignore_channels: value.ignore_channels,
-            delete_non_created_channels: value.delete_non_created_channels,
+            creator_ignore_channels: value.creator_ignore_channels,
+            creator_delete_non_created_channels: value.creator_delete_non_created_channels,
             created_channels: tokio::sync::RwLock::from(value.created_channels),
-            mark_delete_channels: tokio::sync::RwLock::from(mark_delete_channels),
+            creator_mark_delete_channels: tokio::sync::RwLock::from(mark_delete_channels),
             incremental_check: Default::default(),
-            delete_delay: value.delete_delay,
+            creator_delete_delay: value.delete_delay,
         }
     }
 }
@@ -87,10 +87,10 @@ impl Handler {
             guild_id: self.guild_id,
             creator_channel: self.creator_channel,
             create_category: self.create_category,
-            ignore_channels: self.ignore_channels.clone(),
-            delete_non_created_channels: self.delete_non_created_channels,
+            creator_ignore_channels: self.creator_ignore_channels.clone(),
+            creator_delete_non_created_channels: self.creator_delete_non_created_channels,
             created_channels: self.created_channels.read().await.clone(),
-            delete_delay: self.delete_delay,
+            delete_delay: self.creator_delete_delay,
         }
     }
 }
@@ -132,7 +132,7 @@ impl serenity::client::EventHandler for HandlerWrapper {
                     } else {
                         //This needs to be in a separate scope, to make sure, that the write guard is getting dropped before the check_delete_channels call
                         {
-                            let mut guard = self.mark_delete_channels.write().await;
+                            let mut guard = self.creator_mark_delete_channels.write().await;
                             if let Some(delete) = guard.get_mut(&channel) {
                                 #[cfg(debug_assertions)]
                                 tracing::info!("Someone joined Channel {channel}");
@@ -192,8 +192,8 @@ impl Default for HandlerSerializable {
             guild_id: serenity::GuildId::new(695718765119275109),
             creator_channel: serenity::ChannelId::new(1241371878761824356),
             create_category: Some(serenity::ChannelId::new(966080144747933757)),
-            delete_non_created_channels: false,
-            ignore_channels: HashSet::from([serenity::ChannelId::new(695720756189069313)]),
+            creator_delete_non_created_channels: false,
+            creator_ignore_channels: HashSet::from([serenity::ChannelId::new(695720756189069313)]),
             created_channels: Default::default(),
             delete_delay: core::time::Duration::from_secs(15),
         }

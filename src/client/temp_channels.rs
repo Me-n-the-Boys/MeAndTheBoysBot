@@ -42,7 +42,7 @@ impl super::Handler {
         }
     }
     async fn check_delete_channel(&self, ctx: &poise::serenity_prelude::Context, channel: serenity::ChannelId) {
-        if self.ignore_channels.contains(&channel) {
+        if self.creator_ignore_channels.contains(&channel) {
             tracing::info!("Channel {channel} is ignored");
             return;
         }
@@ -50,14 +50,14 @@ impl super::Handler {
             tracing::info!("Channel {channel} is the creator channel");
             return;
         }
-        if !self.delete_non_created_channels && !self.created_channels.read().await.contains_key(&channel) {
+        if !self.creator_delete_non_created_channels && !self.created_channels.read().await.contains_key(&channel) {
             tracing::info!("Channel {channel} is not created by this bot instance and we don't delete non-created channels");
             return;
         }
 
         #[cfg(debug_assertions)]
         tracing::info!("Channel {channel} might have some need for deletion");
-        let instant = match self.mark_delete_channels.write().await.get_mut(&channel) {
+        let instant = match self.creator_mark_delete_channels.write().await.get_mut(&channel) {
             None => {
                 tracing::warn!("Channel {channel} was already deleted?");
                 //Channel was already deleted?
@@ -68,7 +68,7 @@ impl super::Handler {
                     tracing::info!("Channel {channel} is already marked for deletion");
                     return;
                 }
-                let instant = tokio::time::Instant::now() + self.delete_delay + std::time::Duration::from_millis(50);
+                let instant = tokio::time::Instant::now() + self.creator_delete_delay + std::time::Duration::from_millis(50);
                 *deletion = Some(instant);
                 instant
             },
@@ -76,7 +76,7 @@ impl super::Handler {
 
         tracing::info!("Sleeping for channel {channel} for deletion");
         tokio::time::sleep_until(instant).await;
-        match self.mark_delete_channels.read().await.get(&channel) {
+        match self.creator_mark_delete_channels.read().await.get(&channel) {
             Some(None) | None => {
                 tracing::info!("Channel {channel} was rejoined");
                 //Channel shouldn't be deleted
@@ -113,7 +113,7 @@ impl super::Handler {
             Ok(members) => {
                 if members.is_empty() {
                     let channel = {
-                        let (mut created_channels, mut mark_delete_channels) = tokio::join!(self.created_channels.write(), self.mark_delete_channels.write());
+                        let (mut created_channels, mut mark_delete_channels) = tokio::join!(self.created_channels.write(), self.creator_mark_delete_channels.write());
                         mark_delete_channels.remove(&channel);
                         match created_channels.remove(&channel) {
                             None => {
@@ -135,7 +135,7 @@ impl super::Handler {
                     }
                 } else {
                     tracing::info!("Channel {channel} is not empty?");
-                    match { self.mark_delete_channels.write().await.get_mut(&channel) } {
+                    match { self.creator_mark_delete_channels.write().await.get_mut(&channel) } {
                         None => {
                             tracing::warn!("Channel {channel} was already deleted?");
                             //Channel was already deleted?
@@ -177,7 +177,7 @@ impl super::Handler {
             }
             Some(guild) => {
                 let visited_channels = guild.voice_states.values().filter_map(|voice_state|voice_state.channel_id).collect::<std::collections::HashSet<_>>();
-                let created_channels = if self.delete_non_created_channels {
+                let created_channels = if self.creator_delete_non_created_channels {
                     let channels = guild.channels.values().filter_map(|channel| {
                         if channel.kind != serenity::model::channel::ChannelType::Voice ||
                             channel.parent_id != self.create_category ||
@@ -210,7 +210,7 @@ impl super::Handler {
     pub(crate) async fn create_channel(&self, ctx: poise::serenity_prelude::Context, user_id: serenity::UserId) {
         let mut new_channel = serenity::CreateChannel::new("New Channel")
             .kind(serenity::model::channel::ChannelType::Voice)
-            .position(u16::try_from(self.ignore_channels.len() + 1).unwrap_or(u16::MAX))
+            .position(u16::try_from(self.creator_ignore_channels.len() + 1).unwrap_or(u16::MAX))
             .permissions([
                 serenity::model::channel::PermissionOverwrite {
                     allow:
@@ -257,7 +257,7 @@ impl super::Handler {
                 let channel = v.id;
                 tracing::info!("Created channel {channel}, but did not insert yet");
                 {
-                    let (mut created_channels, mut mark_delete_channels) = tokio::join!(self.created_channels.write(), self.mark_delete_channels.write());
+                    let (mut created_channels, mut mark_delete_channels) = tokio::join!(self.created_channels.write(), self.creator_mark_delete_channels.write());
                     created_channels.insert(channel, v);
                     mark_delete_channels.insert(channel, None);
                 }
