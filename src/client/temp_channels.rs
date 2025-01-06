@@ -1,8 +1,24 @@
 use std::collections::HashSet;
-use std::sync::Arc;
 use poise::serenity_prelude as serenity;
 
 impl super::Handler {
+    pub(crate) async fn vc_join_channel_temp_channel(&self, ctx: &serenity::Context, user_id: serenity::UserId, channel_id: serenity::ChannelId, old_state: Option<serenity::all::VoiceState>) {
+        if channel_id == self.creator_channel {
+            self.create_channel(ctx, user_id).await;
+        } else {
+            //This needs to be in a separate scope, to make sure, that the write guard is getting dropped before the check_delete_channels call
+            {
+                let mut guard = self.creator_mark_delete_channels.write().await;
+                if let Some(delete) = guard.get_mut(&channel_id) {
+                    #[cfg(debug_assertions)]
+                    tracing::info!("Someone joined Channel {channel_id}");
+                    *delete = None;
+                    return;
+                }
+            }
+            self.check_delete_channels(ctx, old_state).await
+        }
+    }
     pub(crate) async fn end_incremental_check(&self) {
         Self::end_incremental_check_inner({
             self.incremental_check.write().await.take()
@@ -163,7 +179,7 @@ impl super::Handler {
 
         tracing::info!("Actually deleting Channel {channel}.");
     }
-    pub(crate) async fn check_delete_channels(self: &Arc<Self>, ctx: &poise::serenity_prelude::Context, old_state: std::option::Option<serenity::all::VoiceState>) {
+    pub(crate) async fn check_delete_channels(&self, ctx: &poise::serenity_prelude::Context, old_state: Option<serenity::all::VoiceState>) {
         let old_channel = old_state.as_ref().map(|old_state| old_state.channel_id).flatten();
         if let Some(old_channel) = old_channel {
             tracing::info!("Checking Channel for deletion: {old_channel}");
@@ -207,7 +223,7 @@ impl super::Handler {
             self.check_delete_channel(&ctx, *i).await;
         }
     }
-    pub(crate) async fn create_channel(&self, ctx: poise::serenity_prelude::Context, user_id: serenity::UserId) {
+    pub(crate) async fn create_channel(&self, ctx: &poise::serenity_prelude::Context, user_id: serenity::UserId) {
         let mut new_channel = serenity::CreateChannel::new("New Channel")
             .kind(serenity::model::channel::ChannelType::Voice)
             .position(u16::try_from(self.creator_ignore_channels.len() + 1).unwrap_or(u16::MAX))

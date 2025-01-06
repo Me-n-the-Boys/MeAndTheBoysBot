@@ -1,7 +1,9 @@
 mod temp_channels;
+mod xp;
+mod commands;
 
 use std::collections::{HashMap, HashSet};
-use poise::{CreateReply, serenity_prelude as serenity};
+use poise::serenity_prelude as serenity;
 use serenity::gateway::ShardManager;
 use serenity::utils::validate_token;
 use serenity::prelude::TypeMapKey;
@@ -17,27 +19,9 @@ impl TypeMapKey for ShardManagerContainer {
     type Value = Arc<ShardManager>;
 }
 
-struct Data {} // User data, which is stored and accessible in all command invocations
-type Error = Box<dyn std::error::Error + Send + Sync>;
-type Context<'a> = poise::Context<'a, Data, Error>;
-
-///Gets the latency of the current shard to discord's gateway.
-#[poise::command(
-    slash_command,
-)]
-async fn ping(ctx: Context<'_>) -> Result<(), Error> {
-    const CONVERSION_STEP:u32 = 1000;
-    let time = ctx.ping().await;
-    let ns = time.subsec_nanos();
-    //get submicro_nanos
-    let us = ns/CONVERSION_STEP;
-    let ns = ns - us *CONVERSION_STEP;
-    //get submilli_micros
-    let ms = us /CONVERSION_STEP;
-    let us = us - ms*CONVERSION_STEP;
-    //get subsec_milli
-    ctx.send(CreateReply::default().content(format!("Pong! Shard {}'s Latency to Gateway: {}s{ms}ms{us}µs{ns}ns", ctx.serenity_context().shard_id, time.as_secs(), )).ephemeral(true).reply(true)).await?;
-    Ok(())
+/// User data, which is stored and accessible in all command invocations
+struct Data {
+    handler: Arc<Handler>,
 }
 
 #[derive(serde::Deserialize)]
@@ -53,9 +37,17 @@ struct Handler {
     creator_mark_delete_channels: tokio::sync::RwLock<HashMap<serenity::ChannelId, Option<tokio::time::Instant>>>,
     #[serde(skip)]
     incremental_check: tokio::sync::RwLock<Option<(tokio::task::JoinHandle<()>, tokio::sync::oneshot::Sender<()>)>>,
+    xp_ignored_channels: HashSet<serenity::ChannelId>,
+    #[serde(skip)]
+    xp_vc_tmp: tokio::sync::Mutex<HashMap<serenity::UserId, tokio::time::Instant>>,
+    xp_vc: tokio::sync::Mutex<HashMap<serenity::UserId, u64>>,
+    #[serde(skip)]
+    xp_txt_tmp: tokio::sync::Mutex<HashMap<serenity::UserId, tokio::time::Instant>>,
+    xp_txt: tokio::sync::Mutex<HashMap<serenity::UserId, u64>>,
     creator_delete_delay: core::time::Duration,
 }
 #[derive(Clone, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
 struct HandlerSerializable {
     guild_id: serenity::GuildId,
     creator_channel: serenity::ChannelId,
@@ -63,6 +55,9 @@ struct HandlerSerializable {
     creator_ignore_channels: HashSet<serenity::ChannelId>,
     creator_delete_non_created_channels: bool,
     created_channels: HashMap<serenity::ChannelId, serenity::GuildChannel>,
+    xp_ignored_channels: HashSet<serenity::ChannelId>,
+    xp_vc: HashMap<serenity::UserId, u64>,
+    xp_txt: HashMap<serenity::UserId, u64>,
     delete_delay: core::time::Duration,
 }
 impl From<HandlerSerializable> for Handler {
@@ -77,6 +72,11 @@ impl From<HandlerSerializable> for Handler {
             created_channels: tokio::sync::RwLock::from(value.created_channels),
             creator_mark_delete_channels: tokio::sync::RwLock::from(mark_delete_channels),
             incremental_check: Default::default(),
+            xp_ignored_channels: value.xp_ignored_channels,
+            xp_vc_tmp: Default::default(),
+            xp_vc: tokio::sync::Mutex::new(value.xp_vc),
+            xp_txt_tmp: Default::default(),
+            xp_txt: tokio::sync::Mutex::new(value.xp_txt),
             creator_delete_delay: value.delete_delay,
         }
     }
@@ -90,6 +90,9 @@ impl Handler {
             creator_ignore_channels: self.creator_ignore_channels.clone(),
             creator_delete_non_created_channels: self.creator_delete_non_created_channels,
             created_channels: self.created_channels.read().await.clone(),
+            xp_ignored_channels: self.xp_ignored_channels.clone(),
+            xp_vc: self.xp_vc.lock().await.clone(),
+            xp_txt: self.xp_txt.lock().await.clone(),
             delete_delay: self.creator_delete_delay,
         }
     }
@@ -114,9 +117,26 @@ impl serenity::client::EventHandler for HandlerWrapper {
     {
         Box::pin(async move {
             self.check_delete_channels(&ctx, None).await;
+            //Populate all the voice states on startup
+            if let Some(voice_states) = ctx.cache.guild(self.guild_id).map(|v|v.voice_states.iter().map(|(u,s)|(*u, s.clone())).collect::<Vec<_>>()) {
+                for (user, state) in voice_states {
+                    if state.guild_id != Some(self.guild_id) {
+                        //How?
+                        continue;
+                    }
+                    match state.channel_id {
+                        Some(channel) => {
+                            self.vc_join_xp(channel, user).await;
+                        },
+                        None => {
+                            self.try_apply_vc_xp(user).await;
+                        }
+                    }
+                }
+            }
         })
     }
-    fn voice_state_update<'life0, 'async_trait>(&'life0 self, ctx: poise::serenity_prelude::Context, _old_state: std::option::Option<serenity::all::VoiceState>, new_state: serenity::all::VoiceState)
+    fn voice_state_update<'life0, 'async_trait>(&'life0 self, ctx: poise::serenity_prelude::Context, old_state: std::option::Option<serenity::all::VoiceState>, new_state: serenity::all::VoiceState)
     -> std::pin::Pin<Box<dyn std::future::Future<Output=()> + Send + 'async_trait>>
     where Self: 'async_trait, 'life0: 'async_trait
     {
@@ -126,24 +146,17 @@ impl serenity::client::EventHandler for HandlerWrapper {
             }
             match new_state.channel_id {
                 Some(channel) => {
-                    if new_state.channel_id == Some(self.creator_channel) {
-                        self.create_channel(ctx, new_state.user_id).await;
-                        return;
-                    } else {
-                        //This needs to be in a separate scope, to make sure, that the write guard is getting dropped before the check_delete_channels call
-                        {
-                            let mut guard = self.creator_mark_delete_channels.write().await;
-                            if let Some(delete) = guard.get_mut(&channel) {
-                                #[cfg(debug_assertions)]
-                                tracing::info!("Someone joined Channel {channel}");
-                                *delete = None;
-                                return;
-                            }
-                        }
-                        self.check_delete_channels(&ctx, _old_state).await
-                    }
+                    tokio::join!(
+                        self.vc_join_xp(channel, new_state.user_id),
+                        self.vc_join_channel_temp_channel(&ctx, new_state.user_id, channel, old_state),
+                    );
                 },
-                None => self.check_delete_channels(&ctx, _old_state).await,
+                None => {
+                    tokio::join!(
+                        self.try_apply_vc_xp(new_state.user_id),
+                        self.check_delete_channels(&ctx, old_state),
+                    );
+                },
             }
         })
     }
@@ -185,6 +198,15 @@ impl serenity::client::EventHandler for HandlerWrapper {
             }
        })
     }
+
+    fn message<'life0, 'async_trait>(&'life0 self, ctx: poise::serenity_prelude::Context, message: serenity::model::channel::Message)
+                                                -> std::pin::Pin<Box<dyn std::future::Future<Output=()> + Send + 'async_trait>>
+    where Self: 'async_trait, 'life0: 'async_trait
+    {
+        Box::pin(async move {
+
+        })
+    }
 }
 impl Default for HandlerSerializable {
     fn default() -> Self {
@@ -195,6 +217,9 @@ impl Default for HandlerSerializable {
             creator_delete_non_created_channels: false,
             creator_ignore_channels: HashSet::from([serenity::ChannelId::new(695720756189069313)]),
             created_channels: Default::default(),
+            xp_ignored_channels: HashSet::from([serenity::ChannelId::new(695720756189069313)]),
+            xp_vc: Default::default(),
+            xp_txt: Default::default(),
             delete_delay: core::time::Duration::from_secs(15),
         }
     }
@@ -240,19 +265,6 @@ pub async fn init_client() -> Client {
     let token = std::env::var("DISCORD_TOKEN").expect("No Token. Unable to Start Bot!");
     assert!(validate_token(&token).is_ok(), "Invalid discord token!");
 
-    let framework = poise::framework::FrameworkBuilder::default()
-        .options(poise::FrameworkOptions {
-            commands: vec![ping()],
-            ..Default::default()
-        })
-        .setup(|ctx, _ready, framework| {
-            Box::pin(async move {
-                poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                Ok(Data {})
-            })
-        })
-        .initialize_owners(true)
-        .build();
 
     let mut cache =
         tokio::fs::read(CACHE_PATH).await
@@ -266,6 +278,27 @@ pub async fn init_client() -> Client {
     tracing::info!("Got Cached Creation Channels: {:?}", cache.handler.created_channels);
     cache.handler_arc = HandlerWrapper(Arc::new(cache.handler.clone().into()));
     let handler = cache.handler_arc.clone();
+    let handler_1 = handler.0.clone();
+    
+    
+    let framework = poise::framework::FrameworkBuilder::default()
+        .options(poise::FrameworkOptions {
+            commands: vec![
+                commands::ping(),
+                commands::debug(),
+            ],
+            ..Default::default()
+        })
+        .setup(|ctx, _ready, framework| {
+            Box::pin(async move {
+                poise::builtins::register_globally(ctx, &framework.options().commands).await?;
+                Ok(Data {
+                    handler: handler_1,
+                })
+            })
+        })
+        .initialize_owners(true)
+        .build();
 
     let (sender, saver) = {
         let (sender, mut receiver) = tokio::sync::oneshot::channel::<()>();
