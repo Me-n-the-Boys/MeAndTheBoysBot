@@ -57,7 +57,7 @@ impl super::Handler {
                         let applyable_xp = i128::from(applyable_xp);
                         let amount = i128::from(amount);
                         let over_xp = amount - applyable_xp;
-                        data.xp = data.xp.saturating_sub(over_xp);
+                        data.xp = data.xp.saturating_add(over_xp);
                         tracing::warn!("User {user_id} has triggered the xp spam limit. Queued are {amount} xp from {duration:?} ago. {applyable_xp} xp are applyable. {over_xp} xp are removed.");
                     } else {
                         let amount = amount.saturating_add_signed(-applyable_xp);
@@ -67,7 +67,7 @@ impl super::Handler {
                         tracing::info!("User {user_id} has gotten an unusual amount of xp. Queued outstanding xp for application. Queued are {amount} xp. {applyable_xp} xp were already applied");
                     }
                 } else {
-                    data.xp += i128::from(amount);
+                    data.xp = data.xp.saturating_add(i128::from(amount));
                 }
             }
         }
