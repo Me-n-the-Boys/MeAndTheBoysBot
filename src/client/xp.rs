@@ -4,35 +4,37 @@ use serde_derive::{Deserialize, Serialize};
 #[derive(Debug, Default, Copy, Clone, Deserialize, Serialize)]
 pub struct TextXpInfo {
     xp: i128,
-    #[serde(skip)]
-    pending: Option<(u64, tokio::time::Instant)>,
+    pending: Option<(u64, serenity::Timestamp)>,
 }
+
 impl super::Handler {
+    async fn try_apply_vc_xp_timestamp(&self, start: serenity::Timestamp, instant:serenity::Timestamp, user_id: serenity::UserId) {
+        let duration = start.naive_utc() - instant.naive_utc();
+        let seconds = duration.num_seconds();
+        match u64::try_from(seconds) {
+            Ok(seconds) => {
+                let mut lock = self.xp_vc.lock().await;
+                let v = lock.entry(user_id).or_default();
+                *v = v.saturating_add(seconds);
+            },
+            Err(_) => {
+                tracing::warn!("User {} has joined a voice channel for a negative duration. User was in a voice channel for {}second(s). Refusing to delete xp.", user_id, seconds);
+            }
+        }
+    }
     /// Tries to apply the voice channel xp to the user, if applicable.
-    pub(crate) async fn try_apply_vc_xp(&self, user_id: serenity::UserId) {
+    pub(in super) async fn try_apply_vc_xp(&self, user_id: serenity::UserId) {
         let start = {
             let mut lock = self.xp_vc_tmp.lock().await;
             lock.remove(&user_id)
         };
         if let Some(start) = start {
-            let instant = serenity::Timestamp::now();
-            let duration = start.naive_utc() - instant.naive_utc();
-            let seconds = duration.num_seconds();
-            match u64::try_from(seconds) {
-                Ok(seconds) => {
-                    let mut lock = self.xp_vc.lock().await;
-                    let v = lock.entry(user_id).or_default();
-                    *v+=seconds;
-                },
-                Err(_) => {
-                    tracing::warn!("User {} has joined a voice channel for a negative duration. User was in a voice channel for {}second(s). Refusing to delete xp.", user_id, seconds);
-                }
-            }
+            self.try_apply_vc_xp_timestamp(start, serenity::Timestamp::now(), user_id).await;
         }
     }
     
     /// Marks a user as being in a voice channel.
-    pub(crate) async fn vc_join_xp(&self, channel: serenity::ChannelId, user_id: serenity::UserId) {
+    pub(in super) async fn vc_join_xp(&self, channel: serenity::ChannelId, user_id: serenity::UserId) {
         match self.xp_ignored_channels.contains(&channel) {
             true => self.try_apply_vc_xp(user_id).await,
             false => {
@@ -42,52 +44,69 @@ impl super::Handler {
         }
     }
 
-    pub(crate) async fn message_xp(&self, message: serenity::Message) {
-        let time = tokio::time::Instant::now();
+    fn apply_previous_message_xp(&self, user_id: serenity::UserId, data: &mut TextXpInfo, now: serenity::Timestamp) {
+        match data.pending.take() {
+            None => {},
+            Some((amount, instant)) => {
+                let duration = instant.naive_utc() - now.naive_utc();
+                let applyable_xp = duration.num_milliseconds() / i64::from(self.xp_txt_apply_milliseconds);
+                if i128::from(amount) > i128::from(applyable_xp) {
+                    let mut xp_apply_duration = std::time::Duration::from_millis(u64::from(self.xp_txt_apply_milliseconds));
+                    xp_apply_duration = xp_apply_duration.mul_f64(amount as f64);
+                    if xp_apply_duration > std::time::Duration::from_secs(self.xp_txt_punish_seconds) {
+                        let applyable_xp = i128::from(applyable_xp);
+                        let amount = i128::from(amount);
+                        let over_xp = amount - applyable_xp;
+                        data.xp = data.xp.saturating_sub(over_xp);
+                        tracing::warn!("User {user_id} has triggered the xp spam limit. Queued are {amount} xp from {duration:?} ago. {applyable_xp} xp are applyable. {over_xp} xp are removed.");
+                    } else {
+                        let amount = amount.saturating_add_signed(-applyable_xp);
+                        let applyable_xp = i128::from(applyable_xp);
+                        data.xp = data.xp.saturating_add(applyable_xp);
+                        data.pending = Some((amount, now));
+                        tracing::info!("User {user_id} has gotten an unusual amount of xp. Queued outstanding xp for application. Queued are {amount} xp. {applyable_xp} xp were already applied");
+                    }
+                } else {
+                    data.xp += i128::from(amount);
+                }
+            }
+        }
+    }
+
+    pub(in super) async fn message_xp(&self, message: serenity::Message) {
+        let time = serenity::Timestamp::now();
         //Ignore message, if sent in an ignored channel or by a bot
         if message.author.bot || message.author.system || self.xp_ignored_channels.contains(&message.channel_id) {
             return;
         }
         //Apply message xp
         {
+            let xp = calculate_message_text_xp(BASE_TEXT_XP, &message);
             let mut lock = self.xp_txt.lock().await;
             let data = lock.entry(message.author.id).or_default();
-            let xp = calculate_message_text_xp(BASE_TEXT_XP, &message);
-            match data.pending.take() {
-                None => {
-                    data.pending = Some((xp, time));
-                },
-                Some((amount, instant)) => {
-                    let duration = instant.elapsed();
-                    let applyable_xp = duration.as_millis() / u128::max(1, u128::from(self.xp_txt_apply_milliseconds));
-                    let applyable_xp = u64::try_from(applyable_xp).unwrap_or(u64::MAX);
-                    if amount > applyable_xp {
-                        let mut xp_apply_duration = std::time::Duration::from_millis(self.xp_txt_apply_milliseconds);
-                        xp_apply_duration = xp_apply_duration.mul_f64(amount as f64);
-                        let applyable_xp = i128::from(applyable_xp);
-                        if xp_apply_duration > std::time::Duration::from_secs(self.xp_txt_punish_seconds) {
-                            let amount = i128::from(amount);
-                            let over_xp = amount - applyable_xp;
-                            data.xp = data.xp.saturating_sub(over_xp);
-                            tracing::warn!("User {} has triggered the xp spam limit. Queued are {amount} xp from {duration:?} ago. {applyable_xp} xp are applyable. {over_xp} xp are removed.", message.author.id);
-                        } else {
-                            let (tmp_xp, overflow) = amount.overflowing_add(xp);
-                            if !overflow {
-                                data.pending = Some((tmp_xp, instant));
-                            } else {
-                                data.xp = data.xp.saturating_sub(i128::from(tmp_xp));
-                                let tmp_xp_1 = u64::MAX;
-                                data.xp = data.xp.saturating_sub(i128::from(tmp_xp_1) - applyable_xp);
-                                data.pending = Some((tmp_xp_1, instant));
-                                tracing::warn!("User {} has EXTREME xp gain (2^64+{tmp_xp} text xp outstanding from the last {duration:?}). {tmp_xp}+{tmp_xp_1}-{applyable_xp} text xp have been removed.", message.author.id);
-                            }
-                        }
-                    } else {
-                        data.xp += i128::from(amount);
-                    }
-                }
-            }
+            self.apply_previous_message_xp(message.author.id, data, time);
+            data.pending = Some(data.pending.take().map_or_else(||(xp, time), |(v, time)|(v.saturating_add(xp), time)));
         };
+    }
+    pub(crate) async fn xp_incremental_check(&self) {
+        let time = serenity::Timestamp::now();
+        //apply voice xp
+        {
+            let mut lock = self.xp_vc_tmp.lock().await;
+            for (user_id, start) in lock.iter_mut() {
+                let start = core::mem::replace(start, time);
+                self.try_apply_vc_xp_timestamp(start, time, *user_id).await;
+            }
+        }
+        tracing::info!("Incremental Check: Voice Xp applied");
+        //apply text xp
+        {
+            let mut lock = self.xp_txt.lock().await;
+            for (user_id, start) in lock.iter_mut() {
+                self.apply_previous_message_xp(*user_id, start, time);
+            }
+        }
+        tracing::info!("Incremental Check: Text Xp applied");
     }
 }
 

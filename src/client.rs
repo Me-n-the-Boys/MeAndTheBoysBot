@@ -43,7 +43,7 @@ struct Handler {
     xp_vc_tmp: tokio::sync::Mutex<HashMap<serenity::UserId, serenity::Timestamp>>,
     xp_vc: tokio::sync::Mutex<HashMap<serenity::UserId, u64>>,
     xp_txt: tokio::sync::Mutex<HashMap<serenity::UserId, xp::TextXpInfo>>,
-    xp_txt_apply_milliseconds: u64,
+    xp_txt_apply_milliseconds: u32,
     xp_txt_punish_seconds: u64,
 }
 #[derive(Clone, serde::Deserialize, serde::Serialize)]
@@ -59,7 +59,7 @@ struct HandlerSerializable {
     xp_ignored_channels: HashSet<serenity::ChannelId>,
     xp_vc: HashMap<serenity::UserId, u64>,
     xp_txt: HashMap<serenity::UserId, xp::TextXpInfo>,
-    xp_txt_apply_milliseconds: u64,
+    xp_txt_apply_milliseconds: u32,
     xp_txt_punish_seconds: u64,
 }
 impl From<HandlerSerializable> for Handler {
@@ -189,6 +189,9 @@ impl serenity::client::EventHandler for HandlerWrapper {
                                 _ = inc.tick() => {
                                     tracing::info!("Incremental Check Start");
                                     slf.check_delete_channels(&ctx_clone, None).await;
+                                    tracing::info!("Incremental Check: Temp Channel Check Done");
+                                    slf.xp_incremental_check().await;
+                                    //periodically apply text/voice xp here
                                     tracing::info!("Incremental Check Done");
                                 },
                             )
