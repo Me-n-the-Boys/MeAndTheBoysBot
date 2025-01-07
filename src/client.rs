@@ -35,16 +35,16 @@ struct Handler {
     created_channels: tokio::sync::RwLock<HashMap<serenity::ChannelId, serenity::GuildChannel>>,
     #[serde(skip)]
     creator_mark_delete_channels: tokio::sync::RwLock<HashMap<serenity::ChannelId, Option<tokio::time::Instant>>>,
+    creator_delete_delay: core::time::Duration,
     #[serde(skip)]
     incremental_check: tokio::sync::RwLock<Option<(tokio::task::JoinHandle<()>, tokio::sync::oneshot::Sender<()>)>>,
     xp_ignored_channels: HashSet<serenity::ChannelId>,
     #[serde(skip)]
-    xp_vc_tmp: tokio::sync::Mutex<HashMap<serenity::UserId, tokio::time::Instant>>,
+    xp_vc_tmp: tokio::sync::Mutex<HashMap<serenity::UserId, serenity::Timestamp>>,
     xp_vc: tokio::sync::Mutex<HashMap<serenity::UserId, u64>>,
-    #[serde(skip)]
-    xp_txt_tmp: tokio::sync::Mutex<HashMap<serenity::UserId, tokio::time::Instant>>,
-    xp_txt: tokio::sync::Mutex<HashMap<serenity::UserId, u64>>,
-    creator_delete_delay: core::time::Duration,
+    xp_txt: tokio::sync::Mutex<HashMap<serenity::UserId, xp::TextXpInfo>>,
+    xp_txt_apply_milliseconds: u64,
+    xp_txt_punish_seconds: u64,
 }
 #[derive(Clone, serde::Deserialize, serde::Serialize)]
 #[serde(default)]
@@ -55,10 +55,12 @@ struct HandlerSerializable {
     creator_ignore_channels: HashSet<serenity::ChannelId>,
     creator_delete_non_created_channels: bool,
     created_channels: HashMap<serenity::ChannelId, serenity::GuildChannel>,
+    delete_delay: core::time::Duration,
     xp_ignored_channels: HashSet<serenity::ChannelId>,
     xp_vc: HashMap<serenity::UserId, u64>,
-    xp_txt: HashMap<serenity::UserId, u64>,
-    delete_delay: core::time::Duration,
+    xp_txt: HashMap<serenity::UserId, xp::TextXpInfo>,
+    xp_txt_apply_milliseconds: u64,
+    xp_txt_punish_seconds: u64,
 }
 impl From<HandlerSerializable> for Handler {
     fn from(value: HandlerSerializable) -> Self {
@@ -71,13 +73,14 @@ impl From<HandlerSerializable> for Handler {
             creator_delete_non_created_channels: value.creator_delete_non_created_channels,
             created_channels: tokio::sync::RwLock::from(value.created_channels),
             creator_mark_delete_channels: tokio::sync::RwLock::from(mark_delete_channels),
+            creator_delete_delay: value.delete_delay,
             incremental_check: Default::default(),
             xp_ignored_channels: value.xp_ignored_channels,
             xp_vc_tmp: Default::default(),
             xp_vc: tokio::sync::Mutex::new(value.xp_vc),
-            xp_txt_tmp: Default::default(),
             xp_txt: tokio::sync::Mutex::new(value.xp_txt),
-            creator_delete_delay: value.delete_delay,
+            xp_txt_apply_milliseconds: value.xp_txt_apply_milliseconds,
+            xp_txt_punish_seconds: value.xp_txt_punish_seconds,
         }
     }
 }
@@ -94,6 +97,8 @@ impl Handler {
             xp_vc: self.xp_vc.lock().await.clone(),
             xp_txt: self.xp_txt.lock().await.clone(),
             delete_delay: self.creator_delete_delay,
+            xp_txt_apply_milliseconds: self.xp_txt_apply_milliseconds,
+            xp_txt_punish_seconds: self.xp_txt_punish_seconds,
         }
     }
 }
@@ -199,12 +204,12 @@ impl serenity::client::EventHandler for HandlerWrapper {
        })
     }
 
-    fn message<'life0, 'async_trait>(&'life0 self, ctx: poise::serenity_prelude::Context, message: serenity::model::channel::Message)
+    fn message<'life0, 'async_trait>(&'life0 self, _: poise::serenity_prelude::Context, message: serenity::model::channel::Message)
                                                 -> std::pin::Pin<Box<dyn std::future::Future<Output=()> + Send + 'async_trait>>
     where Self: 'async_trait, 'life0: 'async_trait
     {
         Box::pin(async move {
-
+            self.message_xp(message).await;
         })
     }
 }
@@ -221,6 +226,8 @@ impl Default for HandlerSerializable {
             xp_vc: Default::default(),
             xp_txt: Default::default(),
             delete_delay: core::time::Duration::from_secs(15),
+            xp_txt_apply_milliseconds: 100,
+            xp_txt_punish_seconds: 60,
         }
     }
 }

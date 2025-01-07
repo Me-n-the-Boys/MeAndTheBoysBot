@@ -42,8 +42,9 @@ async fn debug_temp_channels(_: Context<'_>) -> Result<(), Error> {
         "debug_xp_ignored_channels",
         "debug_xp_vc_tmp",
         "debug_xp_vc",
-        "debug_xp_txt_tmp",
         "debug_xp_txt",
+        "debug_xp_txt_spam_delay_seconds",
+        "debug_xp_txt_punish_seconds",
     ),
     rename = "xp",
     ephemeral,
@@ -153,10 +154,10 @@ async fn debug_xp_ignored_channels(ctx: Context<'_>) -> Result<(), Error> {
     slash_command,
     ephemeral,
     owners_only,
-    rename = "vc_tmp"
+    rename = "vc_join"
 )]
 async fn debug_xp_vc_tmp(ctx: Context<'_>) -> Result<(), Error> {
-    ctx.say(format!("Queue of In-VC Time that has not been applied: {:?}", ctx.data().handler.xp_vc_tmp.lock().await.iter().map(|(u, v)|format!("<@{:?}> : {v:?}", u.get())).collect::<Vec<_>>())).await?;
+    ctx.say(format!("Queue of In-VC Time that has not been applied: {:?}", ctx.data().handler.xp_vc_tmp.lock().await.iter().map(|(u, v)|format!("<@{:?}> : {v}", u.get())).collect::<Vec<_>>())).await?;
     Ok(())
 }
 
@@ -175,10 +176,10 @@ async fn debug_xp_vc(ctx: Context<'_>) -> Result<(), Error> {
     slash_command,
     ephemeral,
     owners_only,
-    rename = "txt_tmp"
+    rename = "text"
 )]
-async fn debug_xp_txt_tmp(ctx: Context<'_>) -> Result<(), Error> {
-    ctx.say(format!("Last Text message sent: {:?}", ctx.data().handler.xp_txt_tmp.lock().await.iter().map(|(u, v)|format!("<@{:?}> : {v:?}", u.get())).collect::<Vec<_>>())).await?;
+async fn debug_xp_txt(ctx: Context<'_>) -> Result<(), Error> {
+    ctx.say(format!("Text Xp: {:?}", ctx.data().handler.xp_txt.lock().await.iter().map(|(u, v)|format!("<@{:?}> : {v:?}", u.get())).collect::<Vec<_>>())).await?;
     Ok(())
 }
 
@@ -186,10 +187,25 @@ async fn debug_xp_txt_tmp(ctx: Context<'_>) -> Result<(), Error> {
     slash_command,
     ephemeral,
     owners_only,
-    rename = "txt"
+    rename = "text_apply_milliseconds"
 )]
-async fn debug_xp_txt(ctx: Context<'_>) -> Result<(), Error> {
-    ctx.say(format!("Text Xp: {:?}", ctx.data().handler.xp_txt.lock().await.iter().map(|(u, v)|format!("<@{:?}> : {v:?}", u.get())).collect::<Vec<_>>())).await?;
+async fn debug_xp_txt_spam_delay_seconds(ctx: Context<'_>) -> Result<(), Error> {
+    ctx.say(format!("\
+This setting controls how long a Text Xp \"takes\" to apply.
+This setting is used to limit xp gain per time period.
+If a person were to gain more xp than this, it will be removed instead.
+This is intended as a way to prevent spamming from being a viable strategy to gain xp.
+(in reality the duration of time from receiving the last (non ignored) message of that user and the this setting is used to calculate the max xp gain. If necessary any xp over this limit is removed, and xp until that limit is added to the user's xp.)
+Time in Milliseconds to gain one Xp: {}", ctx.data().handler.xp_txt_apply_milliseconds)).await?;
     Ok(())
 }
-
+#[poise::command(
+    slash_command,
+    ephemeral,
+    owners_only,
+    rename = "text_punish_seconds"
+)]
+async fn debug_xp_txt_punish_seconds(ctx: Context<'_>) -> Result<(), Error> {
+    ctx.say(format!("Time after Seconds of theoretical max xp gain to start punishing people (some other punishments will still happen for technical reasons): {}", ctx.data().handler.xp_txt_punish_seconds)).await?;
+    Ok(())
+}
