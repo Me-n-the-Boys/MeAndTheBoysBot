@@ -229,8 +229,8 @@ impl Default for HandlerSerializable {
             xp_vc: Default::default(),
             xp_txt: Default::default(),
             delete_delay: core::time::Duration::from_secs(15),
-            xp_txt_apply_milliseconds: 100,
-            xp_txt_punish_seconds: 60,
+            xp_txt_apply_milliseconds: 50,
+            xp_txt_punish_seconds: 60*2,
         }
     }
 }
