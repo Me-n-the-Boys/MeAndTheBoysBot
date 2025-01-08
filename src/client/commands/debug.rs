@@ -217,7 +217,7 @@ async fn debug_xp_txt_punish_seconds(ctx: Context<'_>) -> Result<(), Error> {
     owners_only,
     rename = "text_reset"
 )]
-async fn debug_xp_txt_reset(ctx: Context<'_>) {
+async fn debug_xp_txt_reset(ctx: Context<'_>) -> Result<(), Error> {
     ctx.data().handler.xp_txt.lock().await.clear();
     ctx.say("Text Xp has been reset.").await?;
     Ok(())
