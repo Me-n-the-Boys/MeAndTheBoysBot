@@ -116,7 +116,7 @@ impl DerefMut for HandlerWrapper {
     }
 }
 impl serenity::client::EventHandler for HandlerWrapper {
-    fn cache_ready<'life0, 'async_trait>(&'life0 self, ctx: poise::serenity_prelude::Context, guilds: Vec<serenity::GuildId>)
+    fn cache_ready<'life0, 'async_trait>(&'life0 self, ctx: poise::serenity_prelude::Context, _: Vec<serenity::GuildId>)
     -> std::pin::Pin<Box<dyn std::future::Future<Output=()> + Send + 'async_trait>>
     where Self: 'async_trait, 'life0: 'async_trait
     {
