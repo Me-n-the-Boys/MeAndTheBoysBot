@@ -45,6 +45,7 @@ async fn debug_temp_channels(_: Context<'_>) -> Result<(), Error> {
         "debug_xp_txt",
         "debug_xp_txt_spam_delay_seconds",
         "debug_xp_txt_punish_seconds",
+        "debug_xp_txt_reset",
     ),
     rename = "xp",
     ephemeral,
@@ -207,5 +208,17 @@ Time in Milliseconds to gain one Xp: {}", ctx.data().handler.xp_txt_apply_millis
 )]
 async fn debug_xp_txt_punish_seconds(ctx: Context<'_>) -> Result<(), Error> {
     ctx.say(format!("Time after Seconds of theoretical max xp gain to start punishing people (some other punishments will still happen for technical reasons): {}", ctx.data().handler.xp_txt_punish_seconds)).await?;
+    Ok(())
+}
+
+#[poise::command(
+    slash_command,
+    ephemeral,
+    owners_only,
+    rename = "text_reset"
+)]
+async fn debug_xp_txt_reset(ctx: Context<'_>) {
+    ctx.data().handler.xp_txt.lock().await.clear();
+    ctx.say("Text Xp has been reset.").await?;
     Ok(())
 }
