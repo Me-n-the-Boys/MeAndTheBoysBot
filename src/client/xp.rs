@@ -49,7 +49,7 @@ impl super::Handler {
             None => {},
             Some((amount, instant)) => {
                 let duration = instant.naive_utc() - now.naive_utc();
-                let applyable_xp = duration.num_milliseconds() / i64::from(self.xp_txt_apply_milliseconds);
+                let applyable_xp = duration.num_milliseconds().abs() / i64::from(self.xp_txt_apply_milliseconds);
                 if i128::from(amount) > i128::from(applyable_xp) {
                     let mut xp_apply_duration = std::time::Duration::from_millis(u64::from(self.xp_txt_apply_milliseconds));
                     xp_apply_duration = xp_apply_duration.mul_f64(amount as f64);
@@ -81,8 +81,8 @@ impl super::Handler {
         }
         //Apply message xp
         {
-            let xp = calculate_message_text_xp(BASE_TEXT_XP, &message);
             let mut lock = self.xp_txt.lock().await;
+            let xp = calculate_message_text_xp(BASE_TEXT_XP, &message);
             let data = lock.entry(message.author.id).or_default();
             self.apply_previous_message_xp(message.author.id, data, time);
             data.pending = Some(data.pending.take().map_or_else(||(xp, time), |(v, time)|(v.saturating_add(xp), time)));
@@ -113,8 +113,11 @@ impl super::Handler {
 const BASE_TEXT_XP: u64 = 10;
 fn calculate_message_text_xp(base_xp: u64, message: &serenity::Message) -> u64 {
     let mut xp = base_xp as f64;
-    xp += message.content.len() as f64 / 1000. * xp;
-    xp += message.attachments.len() as f64 * 0.25 * xp;
-    xp += message.embeds.len() as f64 * 0.1 * xp;
+    xp *=
+        1. +
+        message.content.len() as f64 / 1000. +
+        message.attachments.len() as f64 * 0.25 +
+        message.embeds.len() as f64 * 0.1;
+
     xp as u64
 }
