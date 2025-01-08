@@ -335,7 +335,7 @@ pub async fn init_client() -> Client {
         }))
     };
 
-    let mut client = serenity::Client::builder(&token, GatewayIntents::default())
+    let mut client = serenity::Client::builder(&token, GatewayIntents::default().union(GatewayIntents::MESSAGE_CONTENT))
         .framework(framework)
         .event_handler(handler.clone())
         .await
