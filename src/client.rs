@@ -136,7 +136,7 @@ impl serenity::client::EventHandler for HandlerWrapper {
                         None => {}
                     }
                 }
-                tracing::warn!("Applied voice states for guild {}", self.guild_id);
+                tracing::info!("Applied voice states for guild {}", self.guild_id);
             } else {
                 tracing::warn!("Guild {} not found in cache. Cannot prefill voice states.", self.guild_id);
             }
@@ -214,6 +214,14 @@ impl serenity::client::EventHandler for HandlerWrapper {
     {
         Box::pin(async move {
             self.message_xp(message).await;
+        })
+    }
+    fn reaction_add<'life0, 'async_trait>(&'life0 self, _: poise::serenity_prelude::Context, add_reaction: serenity::Reaction)
+                                                -> std::pin::Pin<Box<dyn std::future::Future<Output=()> + Send + 'async_trait>>
+    where Self: 'async_trait, 'life0: 'async_trait
+    {
+        Box::pin(async move {
+            self.message_xp_react(add_reaction).await;
         })
     }
 }

@@ -108,9 +108,24 @@ impl super::Handler {
         }
         tracing::info!("Incremental Check: Text Xp applied");
     }
+    pub(crate) async fn message_xp_react(&self, reaction: serenity::Reaction) {
+        let time = serenity::Timestamp::now();
+        if self.xp_ignored_channels.contains(&reaction.channel_id) {
+            return;
+        }
+        let mut xp = BASE_XP_REACT;
+        if reaction.burst { xp*=2; }
+        if let Some(member) = reaction.member {
+            let mut lock = self.xp_txt.lock().await;
+            let data= lock.entry(member.user.id).or_default();
+            self.apply_previous_message_xp(member.user.id, data, time);
+            data.pending.map_or_else(||(xp, time), |(v, time)|(v.saturating_add(xp), time));
+        }
+    }
 }
 
 const BASE_TEXT_XP: u64 = 10;
+const BASE_XP_REACT: u64 = 2;
 fn calculate_message_text_xp(base_xp: u64, message: &serenity::Message) -> u64 {
     let mut xp = base_xp as f64;
     xp *=
