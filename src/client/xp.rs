@@ -10,7 +10,7 @@ pub struct TextXpInfo {
 impl super::Handler {
     async fn try_apply_vc_xp_timestamp(&self, start: serenity::Timestamp, instant:serenity::Timestamp, user_id: serenity::UserId) {
         let duration = start.naive_utc() - instant.naive_utc();
-        let seconds = duration.num_seconds();
+        let seconds = duration.num_seconds().abs();
         match u64::try_from(seconds) {
             Ok(seconds) => {
                 let mut lock = self.xp_vc.lock().await;
@@ -39,7 +39,7 @@ impl super::Handler {
             true => self.try_apply_vc_xp(user_id).await,
             false => {
                 let mut lock = self.xp_vc_tmp.lock().await;
-                lock.entry(user_id).or_insert(serenity::Timestamp::now());
+                lock.entry(user_id).or_insert_with(serenity::Timestamp::now);
             }
         }
     }
