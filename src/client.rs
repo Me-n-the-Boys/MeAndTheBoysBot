@@ -116,28 +116,29 @@ impl DerefMut for HandlerWrapper {
     }
 }
 impl serenity::client::EventHandler for HandlerWrapper {
-    fn cache_ready<'life0, 'async_trait>(&'life0 self, ctx: poise::serenity_prelude::Context, _: Vec<serenity::GuildId>)
+    fn cache_ready<'life0, 'async_trait>(&'life0 self, ctx: poise::serenity_prelude::Context, guilds: Vec<serenity::GuildId>)
     -> std::pin::Pin<Box<dyn std::future::Future<Output=()> + Send + 'async_trait>>
     where Self: 'async_trait, 'life0: 'async_trait
     {
         Box::pin(async move {
             self.check_delete_channels(&ctx, None).await;
             //Populate all the voice states on startup
-            if let Some(voice_states) = ctx.cache.guild(self.guild_id).map(|v|v.voice_states.iter().map(|(u,s)|(*u, s.clone())).collect::<Vec<_>>()) {
+            if let Some(voice_states) = ctx.cache.guild(self.guild_id)
+                .map(|v|v.voice_states.iter()
+                    .filter(|(_,s)|s.guild_id == Some(self.guild_id) && s.channel_id.is_some())
+                    .map(|(u,s)|(*u, s.clone()))
+                    .collect::<Vec<_>>()) {
                 for (user, state) in voice_states {
-                    if state.guild_id != Some(self.guild_id) {
-                        //How?
-                        continue;
-                    }
                     match state.channel_id {
                         Some(channel) => {
                             self.vc_join_xp(channel, user).await;
                         },
-                        None => {
-                            self.try_apply_vc_xp(user).await;
-                        }
+                        None => {}
                     }
                 }
+                tracing::warn!("Applied voice states for guild {}", self.guild_id);
+            } else {
+                tracing::warn!("Guild {} not found in cache. Cannot prefill voice states.", self.guild_id);
             }
         })
     }
