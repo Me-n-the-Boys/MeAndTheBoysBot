@@ -121,6 +121,11 @@ impl super::Handler {
             self.apply_previous_message_xp(member.user.id, data, time);
             data.pending.map_or_else(||(xp, time), |(v, time)|(v.saturating_add(xp), time));
         }
+        if let Some(member) =  reaction.message_author_id {
+            let mut lock = self.xp_txt.lock().await;
+            let data= lock.entry(member).or_default();
+            data.pending.map_or_else(||(xp, time), |(v, time)|(v.saturating_add(xp), time));
+        }
     }
 }
 
