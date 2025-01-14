@@ -33,7 +33,7 @@ serenity = { version = "^0.12", features = ["cache", "framework", "standard_fram
 poise = "0.6.1"
 #Twitch Streaming notifications for bot
 twitch_api = { version = "0.7.0-rc.8", features = ["eventsub", "helix", "client", "reqwest"] }
-reqwest = { version = "0.12.12"}
+reqwest = { version = "0.12.12", default-features = false, features = ["rustls-tls"]}
 url = "2.5.4"
 base64 = "0.22.1"
 #Getting Streaming Notifications via Webhooks

@@ -1,5 +1,5 @@
 FROM rust:alpine AS builder
-RUN apk add musl-dev pkgconfig openssl-dev libssl3 libcrypto3
+RUN apk add musl-dev
 WORKDIR /rust-dc-bot
 COPY Cargo.lock Cargo.toml dummy.rs ./
 RUN mkdir .cargo && cargo vendor > .cargo/config.toml
