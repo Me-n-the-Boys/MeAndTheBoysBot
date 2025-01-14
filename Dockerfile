@@ -3,6 +3,8 @@ RUN apk add musl-dev pkgconfig openssl-dev
 WORKDIR /rust-dc-bot
 COPY Cargo.lock Cargo.toml dummy.rs ./
 RUN mkdir .cargo && cargo vendor > .cargo/config.toml && cargo build --bin dummy --release
+# Workaround for https://github.com/twitch-rs/twitch_api/issues/472
+RUN touch /rust-dc-bot/vendor/twitch_api/src/../README.md
 COPY src/ src/
 RUN cargo build --release
 
