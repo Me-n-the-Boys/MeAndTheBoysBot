@@ -1,15 +1,15 @@
 use std::collections::HashSet;
+use std::num::NonZeroU64;
 use poise::serenity_prelude as serenity;
 
 impl super::Handler {
-    pub(crate) async fn vc_join_channel_temp_channel(&self, ctx: &serenity::Context, user_id: serenity::UserId, channel_id: serenity::ChannelId, old_state: Option<serenity::all::VoiceState>) {
-        if channel_id == self.creator_channel {
-            self.create_channel(ctx, user_id).await;
+    pub(crate) async fn vc_join_channel_temp_channel(&self, ctx: serenity::Context, user_id: serenity::UserId, channel_id: serenity::ChannelId, old_state: &Option<serenity::all::VoiceState>) {
+        if channel_id.get() == self.creator_channel.load(std::sync::atomic::Ordering::Acquire) {
+            self.create_channel(&ctx, user_id).await;
         } else {
             //This needs to be in a separate scope, to make sure, that the write guard is getting dropped before the check_delete_channels call
             {
-                let mut guard = self.creator_mark_delete_channels.write().await;
-                if let Some(delete) = guard.get_mut(&channel_id) {
+                if let Some(mut delete) = self.creator_mark_delete_channels.get_async(&channel_id).await {
                     #[cfg(debug_assertions)]
                     tracing::info!("Someone joined Channel {channel_id}");
                     *delete = None;
@@ -17,30 +17,6 @@ impl super::Handler {
                 }
             }
             self.check_delete_channels(ctx, old_state).await
-        }
-    }
-    pub(crate) async fn end_incremental_check(&self) {
-        Self::end_incremental_check_inner({
-            self.incremental_check.write().await.take()
-        }).await
-    }
-    pub(crate) async fn end_incremental_check_inner(task: Option<(tokio::task::JoinHandle<()>, tokio::sync::oneshot::Sender<()>)>) {
-        match task {
-            Some((handle, sender)) => {
-                match sender.send(()){
-                    Ok(()) => {},
-                    Err(()) => {
-                        tracing::error!("Error sending termination signal to incremental check thread");
-                    }
-                };
-                match handle.await {
-                    Ok(()) => {}
-                    Err(err) => {
-                        tracing::error!("Incremental check thread panicked: {err}");
-                    }
-                }
-            }
-            None => {}
         }
     }
     async fn log_error(&self, ctx: &poise::serenity_prelude::Context, channel: serenity::ChannelId, error: String) {
@@ -62,29 +38,29 @@ impl super::Handler {
             tracing::info!("Channel {channel} is ignored");
             return;
         }
-        if channel == self.creator_channel {
+        if channel.get() == self.creator_channel.load(std::sync::atomic::Ordering::Acquire) {
             tracing::info!("Channel {channel} is the creator channel");
             return;
         }
-        if !self.creator_delete_non_created_channels && !self.created_channels.read().await.contains_key(&channel) {
+        if !self.creator_delete_non_created_channels.load(std::sync::atomic::Ordering::Acquire) && !self.created_channels.contains(&channel) {
             tracing::info!("Channel {channel} is not created by this bot instance and we don't delete non-created channels");
             return;
         }
 
         #[cfg(debug_assertions)]
         tracing::info!("Channel {channel} might have some need for deletion");
-        let instant = match self.creator_mark_delete_channels.write().await.get_mut(&channel) {
+        let instant = match self.creator_mark_delete_channels.get_async(&channel).await {
             None => {
                 tracing::warn!("Channel {channel} was already deleted?");
                 //Channel was already deleted?
                 return;
             }
-            Some(deletion) => {
+            Some(mut deletion) => {
                 if deletion.is_some() {
                     tracing::info!("Channel {channel} is already marked for deletion");
                     return;
                 }
-                let instant = tokio::time::Instant::now() + self.creator_delete_delay + std::time::Duration::from_millis(50);
+                let instant = tokio::time::Instant::now() + std::time::Duration::from_nanos(self.creator_delete_delay_nanoseconds.load(std::sync::atomic::Ordering::Acquire)) + std::time::Duration::from_millis(50);
                 *deletion = Some(instant);
                 instant
             },
@@ -92,28 +68,35 @@ impl super::Handler {
 
         tracing::info!("Sleeping for channel {channel} for deletion");
         tokio::time::sleep_until(instant).await;
-        match self.creator_mark_delete_channels.read().await.get(&channel) {
-            Some(None) | None => {
-                tracing::info!("Channel {channel} was rejoined");
-                //Channel shouldn't be deleted
-                return;
-            }
-            Some(Some(deletion)) => {
-                if *deletion != instant {
-                    tracing::info!("Channel {channel} was rejoined and lefted. Channel Deletion is not our responsibility anymore.");
-                    //Channel was rejoined
+        {
+            let handle = self.creator_mark_delete_channels.get_async(&channel).await;
+            let handle = match handle{
+                Some(v) => Some(*v),
+                None => None
+            };
+            match handle {
+                Some(None) | None => {
+                    tracing::info!("Channel {channel} was rejoined");
+                    //Channel shouldn't be deleted
                     return;
                 }
-            },
-        };
-        let members = match self.created_channels.read().await.get(&channel) {
+                Some(Some(deletion)) => {
+                    if deletion != instant {
+                        tracing::info!("Channel {channel} was rejoined and lefted. Channel Deletion is not our responsibility anymore.");
+                        //Channel was rejoined
+                        return;
+                    }
+                },
+            };
+        }
+        let members = match self.created_channels.get_async(&channel).await {
             None => {
                 tracing::info!("Channel {channel} was already deleted or shouldn't be deleted.");
                 //Channel was already deleted or shouldn't be deleted
                 return;
             }
             Some(channel) => {
-                if channel.parent_id != self.create_category {
+                if channel.parent_id.map_or_else(||0, serenity::ChannelId::get) != self.create_category.load(std::sync::atomic::Ordering::Acquire) {
                     {
                         let channel = channel.id;
                         tracing::info!("Channel {channel} is not in the correct Category, to be deleted.");
@@ -128,38 +111,32 @@ impl super::Handler {
         match members {
             Ok(members) => {
                 if members.is_empty() {
-                    let channel = {
-                        let (mut created_channels, mut mark_delete_channels) = tokio::join!(self.created_channels.write(), self.creator_mark_delete_channels.write());
-                        mark_delete_channels.remove(&channel);
-                        match created_channels.remove(&channel) {
-                            None => {
-                                tracing::info!("Channel {channel} is already deleted? WTF?");
-                                //Channel was already deleted or shouldn't be deleted
-                                return;
-                            }
-                            Some(channel) => channel,
-                        }
-                    };
+                    self.creator_mark_delete_channels.remove_async(&channel).await;
+                    if !self.created_channels.remove_async(&channel).await {
+                        tracing::info!("Channel {channel} is already deleted? WTF?");
+                        //Channel was already deleted or shouldn't be deleted
+                        return;
+                    }
                     tracing::info!("Channel {channel} Deleted!");
                     match channel.delete(&ctx).await {
                         Ok(_) => {},
                         Err(err) => {
-                            self.log_error(&ctx, channel.id, format!("There was an error deleting the Channel: {err}")).await;
+                            self.log_error(&ctx, channel, format!("There was an error deleting the Channel: {err}")).await;
                             tracing::error!("Error deleting channel: {err}");
                             return;
                         }
                     }
                 } else {
                     tracing::info!("Channel {channel} is not empty?");
-                    match { self.creator_mark_delete_channels.write().await.get_mut(&channel) } {
+                    match self.creator_mark_delete_channels.get_async(&channel).await {
                         None => {
                             tracing::warn!("Channel {channel} was already deleted?");
                             //Channel was already deleted?
                             return;
                         }
-                        Some(deletion) => {
-                            if let Some(deletion) = deletion {
-                                if *deletion != instant {
+                        Some(mut deletion) => {
+                            if let Some(deletion) = *deletion {
+                                if deletion != instant {
                                     tracing::warn!("Channel {channel} was rejoined and lefted. Channel Deletion is not our responsibility anymore. How did we get here though?");
                                     //Channel was rejoined
                                     return;
@@ -179,24 +156,24 @@ impl super::Handler {
 
         tracing::info!("Actually deleting Channel {channel}.");
     }
-    pub(crate) async fn check_delete_channels(&self, ctx: &poise::serenity_prelude::Context, old_state: Option<serenity::all::VoiceState>) {
+    pub(crate) async fn check_delete_channels(&self, ctx: poise::serenity_prelude::Context, old_state: &Option<serenity::all::VoiceState>) {
         let old_channel = old_state.as_ref().map(|old_state| old_state.channel_id).flatten();
         if let Some(old_channel) = old_channel {
             tracing::info!("Checking Channel for deletion: {old_channel}");
             self.check_delete_channel(&ctx, old_channel).await;
         }
 
-        let (visited_channels, created_chanels) = match ctx.cache.guild(self.guild_id) {
+        let (mut visited_channels, created_chanels) = match ctx.cache.guild(self.guild_id) {
             None => {
                 tracing::error!("Guild not in cache");
                 return;
             }
             Some(guild) => {
                 let visited_channels = guild.voice_states.values().filter_map(|voice_state|voice_state.channel_id).collect::<std::collections::HashSet<_>>();
-                let created_channels = if self.creator_delete_non_created_channels {
+                let created_channels = if self.creator_delete_non_created_channels.load(std::sync::atomic::Ordering::Acquire) {
                     let channels = guild.channels.values().filter_map(|channel| {
                         if channel.kind != serenity::model::channel::ChannelType::Voice ||
-                            channel.parent_id != self.create_category ||
+                            channel.parent_id.map_or_else(||0, serenity::ChannelId::get) != self.create_category.load(std::sync::atomic::Ordering::Acquire) ||
                             old_channel == Some(channel.id)
                         {
                             None
@@ -214,7 +191,9 @@ impl super::Handler {
         let created_channels = match created_chanels {
             Some(v) => v,
             None => {
-                self.created_channels.read().await.keys().copied().collect::<HashSet<_>>()
+                let guard = sdd::Guard::new();
+                visited_channels.retain(|channel|self.created_channels.contains(channel));
+                self.created_channels.iter(&guard).map(|(k, _)|k).copied().collect::<HashSet<_>>()
             },
         };
         let difference = created_channels.difference(&visited_channels);
@@ -240,10 +219,12 @@ impl super::Handler {
                 },
             ])
             ;
-        if let Some(category) = self.create_category {
-            new_channel = new_channel.category(category);
+        match NonZeroU64::new(self.create_category.load(std::sync::atomic::Ordering::Acquire)) {
+            None => {},
+            Some(category) => {
+                new_channel = new_channel.category(category);
+            }
         }
-
         let mut error = None;
         match user_id.to_user(&ctx).await{
             Ok(user) => {
@@ -273,9 +254,8 @@ impl super::Handler {
                 let channel = v.id;
                 tracing::info!("Created channel {channel}, but did not insert yet");
                 {
-                    let (mut created_channels, mut mark_delete_channels) = tokio::join!(self.created_channels.write(), self.creator_mark_delete_channels.write());
-                    created_channels.insert(channel, v);
-                    mark_delete_channels.insert(channel, None);
+                    let _ = self.created_channels.insert_async(channel, v).await;
+                    let _ = self.creator_mark_delete_channels.insert_async(channel, None).await;
                 }
                 tracing::info!("Created channel {channel}");
             }

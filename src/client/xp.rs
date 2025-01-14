@@ -13,8 +13,7 @@ impl super::Handler {
         let seconds = duration.num_seconds().abs();
         match u64::try_from(seconds) {
             Ok(seconds) => {
-                let mut lock = self.xp_vc.lock().await;
-                let v = lock.entry(user_id).or_default();
+                let mut v = self.xp_vc.entry_async(user_id).await.or_default();
                 *v = v.saturating_add(seconds);
             },
             Err(_) => {
@@ -25,8 +24,7 @@ impl super::Handler {
     /// Tries to apply the voice channel xp to the user, if applicable.
     pub(in super) async fn try_apply_vc_xp(&self, user_id: serenity::UserId) {
         let start = {
-            let mut lock = self.xp_vc_tmp.lock().await;
-            lock.remove(&user_id)
+            self.xp_vc_tmp.remove_async(&user_id).await.map(|(_, v)| v)
         };
         if let Some(start) = start {
             self.try_apply_vc_xp_timestamp(start, serenity::Timestamp::now(), user_id).await;
@@ -38,8 +36,7 @@ impl super::Handler {
         match self.xp_ignored_channels.contains(&channel) {
             true => self.try_apply_vc_xp(user_id).await,
             false => {
-                let mut lock = self.xp_vc_tmp.lock().await;
-                lock.entry(user_id).or_insert_with(serenity::Timestamp::now);
+                self.xp_vc_tmp.entry_async(user_id).await.or_insert_with(serenity::Timestamp::now);
             }
         }
     }
@@ -49,11 +46,12 @@ impl super::Handler {
             None => {},
             Some((amount, instant)) => {
                 let duration = instant.naive_utc() - now.naive_utc();
-                let applyable_xp = duration.num_milliseconds().abs() / i64::from(self.xp_txt_apply_milliseconds);
+                let xp_txt_apply_milliseconds = self.xp_txt_apply_milliseconds.load(std::sync::atomic::Ordering::Acquire);
+                let applyable_xp = duration.num_milliseconds().abs() / i64::from(xp_txt_apply_milliseconds);
                 if i128::from(amount) > i128::from(applyable_xp) {
-                    let mut xp_apply_duration = std::time::Duration::from_millis(u64::from(self.xp_txt_apply_milliseconds));
+                    let mut xp_apply_duration = std::time::Duration::from_millis(u64::from(xp_txt_apply_milliseconds));
                     xp_apply_duration = xp_apply_duration.mul_f64(amount as f64);
-                    if xp_apply_duration > std::time::Duration::from_secs(self.xp_txt_punish_seconds) {
+                    if xp_apply_duration > std::time::Duration::from_secs(self.xp_txt_punish_seconds.load(std::sync::atomic::Ordering::Acquire)) {
                         let applyable_xp = i128::from(applyable_xp);
                         let amount = i128::from(amount);
                         let over_xp = amount - applyable_xp;
@@ -72,7 +70,6 @@ impl super::Handler {
             }
         }
     }
-
     pub(in super) async fn message_xp(&self, message: serenity::Message) {
         let time = serenity::Timestamp::now();
         //Ignore message, if sent in an ignored channel or by a bot
@@ -81,10 +78,9 @@ impl super::Handler {
         }
         //Apply message xp
         {
-            let mut lock = self.xp_txt.lock().await;
             let xp = calculate_message_text_xp(BASE_TEXT_XP, &message);
-            let data = lock.entry(message.author.id).or_default();
-            self.apply_previous_message_xp(message.author.id, data, time);
+            let mut data = self.xp_txt.entry_async(message.author.id).await.or_default();
+            self.apply_previous_message_xp(message.author.id, &mut*data, time);
             data.pending = Some(data.pending.take().map_or_else(||(xp, time), |(v, time)|(v.saturating_add(xp), time)));
         };
     }
@@ -92,19 +88,27 @@ impl super::Handler {
         let time = serenity::Timestamp::now();
         //apply voice xp
         {
-            let mut lock = self.xp_vc_tmp.lock().await;
-            for (user_id, start) in lock.iter_mut() {
+            let mut js = Vec::new();
+            //TODO: This is a little hacky, but it works for now
+            self.xp_vc_tmp.retain_async(|user_id, start| {
+                if *start == time {
+                    return true;
+                }
                 let start = core::mem::replace(start, time);
-                self.try_apply_vc_xp_timestamp(start, time, *user_id).await;
+                js.push((*user_id, start));
+                true
+            }).await;
+            for (user_id, start) in js {
+                self.try_apply_vc_xp_timestamp(start, time, user_id).await;
             }
         }
         tracing::info!("Incremental Check: Voice Xp applied");
         //apply text xp
         {
-            let mut lock = self.xp_txt.lock().await;
-            for (user_id, start) in lock.iter_mut() {
+            self.xp_txt.retain_async(|user_id, start|{
                 self.apply_previous_message_xp(*user_id, start, time);
-            }
+                true
+            }).await;
         }
         tracing::info!("Incremental Check: Text Xp applied");
     }
@@ -116,15 +120,13 @@ impl super::Handler {
         let mut xp = BASE_XP_REACT;
         if reaction.burst { xp*=2; }
         {
-            let mut lock = self.xp_txt.lock().await;
             if let Some(member) = reaction.member {
-                let data= lock.entry(member.user.id).or_default();
-                self.apply_previous_message_xp(member.user.id, data, time);
+                let mut data = self.xp_txt.entry_async(member.user.id).await.or_default();
+                self.apply_previous_message_xp(member.user.id, &mut*data, time);
                 data.pending.map_or_else(||(xp, time), |(v, time)|(v.saturating_add(xp), time));
             }
             if let Some(member) =  reaction.message_author_id {
-                let mut lock = self.xp_txt.lock().await;
-                let data= lock.entry(member).or_default();
+                let data = self.xp_txt.entry_async(member).await.or_default();
                 data.pending.map_or_else(||(xp, time), |(v, time)|(v.saturating_add(xp), time));
             }
         }

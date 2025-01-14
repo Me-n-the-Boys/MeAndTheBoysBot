@@ -3,7 +3,7 @@
     naersk.url = "github:nmattia/naersk/master";
     # This must be the stable nixpkgs if you're running the app on a
     # stable NixOS install.  Mixing EGL library versions doesn't work.
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
     utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
     flake-compat = {
@@ -27,6 +27,7 @@
           xorg.libxcb
           gtk3.dev
           pkg-config
+          openssl
 
           libGL
           libxkbcommon

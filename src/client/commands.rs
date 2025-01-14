@@ -1,7 +1,7 @@
 mod debug;
+mod settings;
 
 use poise::CreateReply;
-
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, super::Data, Error>;
 
@@ -25,3 +25,4 @@ pub async fn ping(ctx: Context<'_>) -> Result<(), Error> {
 }
 
 pub use debug::debug;
+pub use settings::settings;

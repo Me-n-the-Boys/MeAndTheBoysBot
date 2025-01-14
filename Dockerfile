@@ -9,4 +9,5 @@ RUN cargo build --release
 FROM scratch
 COPY --from=builder /rust-dc-bot/target/release/me-and-the-boys-dcbot /me-and-the-boys-dcbot
 WORKDIR "/data"
+EXPOSE 8000
 CMD ["/me-and-the-boys-dcbot"]
