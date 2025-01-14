@@ -55,21 +55,22 @@ const CSRF_TOKEN_LENGTH: usize = 32;
 pub(crate) struct Twitch {
     pub(super) client: twitch_api::HelixClient<'static, reqwest::Client>,
     pub(super) access_token: twitch_api::twitch_oauth2::AppAccessToken,
-    pub(super) conduit: twitch_api::eventsub::Conduit,
+    conduit: twitch_api::eventsub::Conduit,
     pub(super) csrf_tokens: scc::HashIndex<[u8; CSRF_TOKEN_LENGTH], std::time::Instant>,
     pub(super) auth: TwitchAuthentications,
 }
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub(crate) struct TwitchAuthentications{
     pub(crate) authentications: scc::HashMap<twitch_api::types::UserId, TwitchAuthentication>,
     pub(crate) live_message: scc::HashMap<twitch_api::types::UserId, TwitchLiveMessage>,
+    conduit: Option<twitch_api::eventsub::Conduit>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[non_exhaustive]
 pub(crate) struct TwitchAuthentication{
-    pub access_token: twitch_api::twitch_oauth2::AccessToken,
     pub client_id: twitch_api::twitch_oauth2::ClientId,
     /// Username of user associated with this token
     pub login: twitch_api::types::UserName,
@@ -78,6 +79,34 @@ pub(crate) struct TwitchAuthentication{
     /// The refresh token used to extend the life of this user token
     pub refresh_token: Option<twitch_api::twitch_oauth2::RefreshToken>,
     pub expiry: TwitchAuthenticationTime,
+}
+
+impl TwitchAuthentications {
+
+    async fn load() -> Self {
+        match tokio::fs::read_to_string(TWITCH_AUTH_PATH).await {
+            Ok(v) => serde_json::from_str(v.as_str()).unwrap_or_else(|err| {
+                tracing::info!("Failed to parse Twitch Authentications: {err}");
+                Default::default()
+            }),
+            Err(err) => {
+                tracing::info!("Failed to read Twitch Authentications file: {err}");
+                Default::default()
+            }
+        }
+    }
+    pub(crate) async fn save(&self) -> ::anyhow::Result<()> {
+        let auth = serde_json::to_string(&self)?;
+        match tokio::fs::write(TWITCH_AUTH_PATH, auth).await {
+            Ok(()) => {
+                tracing::info!("Saved Twitch Authentications");
+            },
+            Err(err) => {
+                tracing::error!("Failed to save Twitch Authentications: {err}");
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -108,7 +137,6 @@ impl From<twitch_api::twitch_oauth2::UserToken> for TwitchAuthentication {
         };
         let client_id = value.client_id().clone();
         Self {
-            access_token: value.access_token,
             client_id,
             login: value.login,
             user_id: value.user_id,
@@ -125,16 +153,7 @@ pub(crate) fn get_base_url() -> String {
 
 pub(crate) const TWITCH_AUTH_PATH: &str = "twitch_authentications.json";
 pub(in super) async fn create_twitch_client(rocket: rocket::Rocket<rocket::Build>) -> ::anyhow::Result<(rocket::Rocket<rocket::Build>, std::sync::Arc<Twitch>)> {
-    let auth = match tokio::fs::read_to_string(TWITCH_AUTH_PATH).await {
-        Ok(v) => serde_json::from_str(v.as_str()).unwrap_or_else(|err| {
-            tracing::info!("Failed to load Twitch Authentications: {err}");
-            Default::default()
-        }),
-        Err(err) => {
-            tracing::info!("Failed to read Twitch Authentications file: {err}");
-            Default::default()
-        }
-    };
+    let mut auth = TwitchAuthentications::load().await;
     //Get Twitch Client ID and Secret from .env
     let client_id = ::twitch_api::twitch_oauth2::types::ClientId::from(::dotenv::var("TWITCH_CLIENT_ID")?);
     let client_secret = ::twitch_api::twitch_oauth2::types::ClientSecret::from(::dotenv::var("TWITCH_CLIENT_SECRET")?);
@@ -144,7 +163,16 @@ pub(in super) async fn create_twitch_client(rocket: rocket::Rocket<rocket::Build
     //Utilize the Client credentials grant flow to get an app access token
     let access_token = twitch_api::twitch_oauth2::tokens::AppAccessToken::get_app_access_token(&client, client_id, client_secret, vec![]).await?;
     //Pre-Create a conduit for eventsub
-    let conduit = client.create_conduit(1, &access_token).await?;
+    let created_conduit = auth.conduit.is_none();
+    let conduit = match auth.conduit.clone() {
+        Some(v) => v,
+        None => {
+            let conduit = client.create_conduit(1, &access_token).await?;
+            auth.conduit = Some(conduit.clone());
+            conduit
+        },
+    };
+    auth.save().await?;
     let twitch = std::sync::Arc::new(Twitch {
         client,
         access_token,
@@ -154,9 +182,13 @@ pub(in super) async fn create_twitch_client(rocket: rocket::Rocket<rocket::Build
     });
     //Attach Twitch Client to Rocket as a managed state and Register the Twitch Rocket Callback to finish Conduit setup, once the Webserver is online
     let rocket = rocket
-        .attach(rocket_callback::TwitchRocketCallback{client: twitch.clone()})
         .manage(twitch.clone())
     ;
+    let rocket = if created_conduit {
+        rocket.attach(rocket_callback::TwitchRocketCallback{client: twitch.clone()})
+    } else {
+        rocket
+    };
 
     Ok((rocket, twitch))
 }
