@@ -2,7 +2,6 @@ mod client;
 mod twitch_client;
 mod rocket;
 
-use tracing::level_filters::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::registry;
 
