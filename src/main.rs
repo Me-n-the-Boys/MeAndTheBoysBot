@@ -15,7 +15,7 @@ async fn main() -> ::anyhow::Result<()>{
     let stdout = tracing_subscriber::fmt::Layer::default();
 
     let subscriber = registry::Registry::default() // provide underlying span data store
-        .with(LevelFilter::INFO) // filter out low-level debug tracing (eg tokio executor)
+        .with(tracing_subscriber::EnvFilter::from_default_env()) // filter spans based on env var
         .with(stdout); // log to stdout
         // .with(webhook) //publish to discord
         // .with(ht); // publish to honeycomb backend
