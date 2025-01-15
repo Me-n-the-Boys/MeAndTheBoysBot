@@ -42,7 +42,7 @@ pub(in super) async fn new_oauth<'r>(twitch: &rocket::State<crate::twitch_client
     }
 }
 
-#[rocket::get("/twitch/oauth?<code>&<scope>&<state>")]
+#[rocket::get("/twitch/oauth?<code>&<scope>&<state>", rank=0)]
 pub(in super) async fn oauth_ok<'r>(code: &'r str, scope: &'r str, state: &'r str, twitch: &rocket::State<crate::twitch_client::Twitch>, user_token_builder: UserTokenBuilder)
     -> Result<
         (rocket::http::Status, rocket::response::content::RawHtml<std::borrow::Cow<'static, str>>),
@@ -92,7 +92,7 @@ pub(in super) async fn oauth_ok<'r>(code: &'r str, scope: &'r str, state: &'r st
     }
 }
 
-#[rocket::get("/twitch/oauth?<error>&<error_description>&<state>")]
+#[rocket::get("/twitch/oauth?<error>&<error_description>&<state>", rank=1)]
 pub(in super) async fn oauth_err<'r>(error: &'r str, error_description: &'r str, state: &'r str, twitch: &rocket::State<crate::twitch_client::Twitch>) -> Result<(rocket::http::Status, rocket::response::content::RawHtml<String>),impl rocket::response::Responder<'r, 'r>> {
     if let Err(err) = validate_state(state, twitch).await {
         return Err(err);
