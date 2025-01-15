@@ -36,7 +36,7 @@ Invalid State (Not Base64 encoded)"#)),
 }
 
 #[rocket::get("/twitch/new_oauth")]
-pub(in super) async fn new_oauth<'r>(twitch: &rocket::State<crate::twitch_client::Twitch>) -> Result<rocket::response::Redirect, impl rocket::response::Responder<'r, 'static>> {
+pub(in super) async fn new_oauth<'r>(twitch: &rocket::State<Arc<crate::twitch_client::Twitch>>) -> Result<rocket::response::Redirect, impl rocket::response::Responder<'r, 'static>> {
     match twitch.get_new_oath().await {
         Ok(url) => Ok(rocket::response::Redirect::temporary(url)),
         Err(err) => Err((rocket::http::Status::InternalServerError, err)),
