@@ -5,7 +5,7 @@ use crate::twitch_client::UserTokenBuilder;
 async fn validate_state<'a>(state: &'a str, twitch: &rocket::State<Arc<crate::twitch_client::Twitch>>) -> Result<Vec<u8>, impl rocket::response::Responder<'a, 'a>> {
     use base64::engine::Engine;
     match base64::engine::general_purpose::GeneralPurpose::decode(&base64::engine::general_purpose::URL_SAFE, state.as_bytes()) {
-        Ok(state) => if twitch.inner().csrf_tokens.remove_async(state.as_slice()).await {
+        Ok(state) => if !twitch.inner().csrf_tokens.remove_async(state.as_slice()).await {
             Err((rocket::http::Status::BadRequest, r#"
 <html lang="en">
 <head>
