@@ -1,7 +1,7 @@
 mod rocket_callback;
 
 use base64::Engine;
-use twitch_api::twitch_oauth2::{TwitchToken, UserToken};
+use twitch_api::twitch_oauth2::{AccessToken, TwitchToken, UserToken};
 
 pub(in super) static TWITCH_WS_SECRET:std::sync::LazyLock<[u8;64]>  = std::sync::LazyLock::new(||{
     rand::random()
@@ -11,48 +11,12 @@ pub(in super) static TWITCH_WS_SECRET_STRING:std::sync::LazyLock<String>  = std:
     base64::engine::general_purpose::URL_SAFE.encode(&*TWITCH_WS_SECRET)
 });
 
-#[non_exhaustive]
-#[derive(Clone)]
-pub(crate) struct UserTokenBuilder{
-    pub client_id: ::twitch_api::twitch_oauth2::types::ClientId,
-    pub client_secret: ::twitch_api::twitch_oauth2::types::ClientSecret,
-    pub url: String,
-}
-
-#[rocket::async_trait]
-impl<'a> rocket::request::FromRequest<'a> for UserTokenBuilder {
-    type Error = String;
-
-    async fn from_request(_: &'a rocket::Request<'_>) -> rocket::request::Outcome<Self, Self::Error> {
-        match &*TWITCH_OAUTH {
-            Ok(v) => rocket::request::Outcome::Success(v.clone()),
-            Err(e) => {
-                tracing::error!("Failed to get Twitch OAuth: {e}");
-                rocket::request::Outcome::Error((rocket::http::Status::InternalServerError, format!("Failed to get Twitch OAuth: {e}")))
-            }
-        }
-    }
-}
-
-pub(crate) static TWITCH_OAUTH: std::sync::LazyLock<Result<UserTokenBuilder, String>> = std::sync::LazyLock::new(||{
-    let client_id = ::twitch_api::twitch_oauth2::types::ClientId::from(match ::dotenv::var("TWITCH_CLIENT_ID"){
-        Ok(client_id) => client_id,
-        Err(_) => return Err("Invalid Server configuration. Missing TWITCH_CLIENT_ID.".to_string()),
-    });
-    let client_secret = ::twitch_api::twitch_oauth2::types::ClientSecret::from(match ::dotenv::var("TWITCH_CLIENT_SECRET"){
-        Ok(client_secret) => client_secret,
-        Err(_) => return Err("Invalid Server configuration. Missing TWITCH_CLIENT_SECRET.".to_string()),
-    });
-    Ok(UserTokenBuilder {
-        client_id,
-        client_secret,
-        url: format!("{}twitch/oauth", crate::twitch_client::get_base_url())
-    })
-});
-
-const CSRF_TOKEN_LENGTH: usize = 32;
+pub(crate) const CSRF_TOKEN_LENGTH: usize = 32;
 #[non_exhaustive]
 pub(crate) struct Twitch {
+    pub(super) client_id: ::twitch_api::twitch_oauth2::types::ClientId,
+    pub(super) client_secret: ::twitch_api::twitch_oauth2::types::ClientSecret,
+    pub(super) oauth_url: String,
     pub(super) client: twitch_api::HelixClient<'static, reqwest::Client>,
     pub(super) access_token: twitch_api::twitch_oauth2::AppAccessToken,
     conduit: twitch_api::eventsub::Conduit,
@@ -62,8 +26,9 @@ pub(crate) struct Twitch {
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
-pub(crate) struct TwitchAuthentications{
+pub(crate) struct TwitchAuthentications {
     pub(crate) authentications: scc::HashMap<twitch_api::types::UserId, TwitchAuthentication>,
+    pub(crate) enabled_channels: scc::HashMap<twitch_api::types::UserId, scc::HashMap<serenity::model::id::ChannelId, (bool, chrono::DateTime<chrono::Utc>)>>,
     pub(crate) live_message: scc::HashMap<twitch_api::types::UserId, TwitchLiveMessage>,
     conduit: Option<twitch_api::eventsub::Conduit>,
 }
@@ -71,6 +36,7 @@ pub(crate) struct TwitchAuthentications{
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[non_exhaustive]
 pub(crate) struct TwitchAuthentication{
+    pub access_token: AccessToken,
     pub client_id: twitch_api::twitch_oauth2::ClientId,
     /// Username of user associated with this token
     pub login: twitch_api::types::UserName,
@@ -82,7 +48,6 @@ pub(crate) struct TwitchAuthentication{
 }
 
 impl TwitchAuthentications {
-
     async fn load() -> Self {
         match tokio::fs::read_to_string(TWITCH_AUTH_PATH).await {
             Ok(v) => serde_json::from_str(v.as_str()).unwrap_or_else(|err| {
@@ -107,6 +72,19 @@ impl TwitchAuthentications {
         }
         Ok(())
     }
+
+    pub(crate) async fn remove_outdated(&self){
+    }
+}
+impl Twitch {
+    /// Csrf tokens are valid for 15 minutes
+    const CSRF_TOKEN_VALIDITY_SECONDS: u64 = 60*15;
+    /// Removes any outdated tokens
+    pub(crate) async fn remove_outdated(&self){
+        let remove_outdated_csrf =self.csrf_tokens.retain_async(|_, instant|instant.elapsed() > std::time::Duration::from_secs(Self::CSRF_TOKEN_VALIDITY_SECONDS));
+        let remove_outdated_auth = self.auth.remove_outdated();
+        tokio::join!(remove_outdated_csrf,remove_outdated_auth);
+    }
 }
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -127,6 +105,71 @@ pub(crate) enum TwitchAuthenticationTime {
     Expiring(chrono::DateTime<chrono::Utc>),
 }
 
+impl TwitchAuthenticationTime {
+    pub fn new_expiry(expiry: std::time::Duration) -> Self {
+        if let Ok(seconds) = i64::try_from(expiry.as_secs()) {
+            match chrono::Utc::now().checked_add_signed(chrono::TimeDelta::seconds(seconds)) {
+                Some(v) => TwitchAuthenticationTime::Expiring(v),
+                //Let's just treat a date-time, that is so far in the future that it cannot be represented as a never expiring token.
+                None => TwitchAuthenticationTime::NeverExpiring,
+            }
+        } else {
+            TwitchAuthenticationTime::NeverExpiring
+        }
+    }
+}
+
+impl TwitchAuthentication {
+    pub async fn check_valid(&mut self, twitch: &Twitch) -> bool {
+        match self.access_token.validate_token(&twitch.client).await {
+            Ok(v) => {
+                if let Some(expiry) = v.expires_in {
+                    self.expiry = TwitchAuthenticationTime::new_expiry(expiry);
+                }
+                if let Some(login) = v.login {
+                    self.login = login;
+                }
+                if let Some(user_id) = v.user_id {
+                    self.user_id = user_id;
+                }
+                self.client_id = v.client_id;
+
+                return true;
+            }
+            Err(err) => {
+                let user_id = &self.user_id;
+                let user_name = &self.login;
+                tracing::warn!("Failed to validate token for {user_id}/{user_name}: {err}");
+                //Don't return here, since we might be able to refresh the token
+            },
+        }
+        match self.refresh_token.take() {
+            Some(v) => {
+                match v.refresh_token(&twitch.client, &twitch.client_id, &twitch.client_secret).await {
+                    Ok((access_token, expiry, refresh_token)) => {
+                        self.access_token = access_token;
+                        self.expiry = TwitchAuthenticationTime::new_expiry(expiry);
+                        self.refresh_token = refresh_token;
+                        true
+                    }
+                    Err(err) => {
+                        let user_id = &self.user_id;
+                        let user_name = &self.login;
+                        tracing::error!("Failed to refresh token for {user_id}/{user_name}: {err}");
+                        false
+                    }
+                }
+            },
+            None => {
+                let user_id = &self.user_id;
+                let user_name = &self.login;
+                tracing::warn!("Token is invalid and there is no refresh token for {user_id}/{user_name}");
+                false
+            }
+        }
+    }
+}
+
 impl From<twitch_api::twitch_oauth2::UserToken> for TwitchAuthentication {
     fn from(value: UserToken) -> Self {
         let expiry = if value.never_expiring {
@@ -137,6 +180,7 @@ impl From<twitch_api::twitch_oauth2::UserToken> for TwitchAuthentication {
         };
         let client_id = value.client_id().clone();
         Self {
+            access_token: value.access_token,
             client_id,
             login: value.login,
             user_id: value.user_id,
@@ -152,7 +196,7 @@ pub(crate) fn get_base_url() -> String {
 }
 
 pub(crate) const TWITCH_AUTH_PATH: &str = "twitch_authentications.json";
-pub(in super) async fn create_twitch_client(rocket: rocket::Rocket<rocket::Build>) -> ::anyhow::Result<(rocket::Rocket<rocket::Build>, std::sync::Arc<Twitch>)> {
+pub(in super) async fn create_twitch_client(mut rocket: rocket::Rocket<rocket::Build>) -> ::anyhow::Result<(rocket::Rocket<rocket::Build>, std::sync::Arc<Twitch>, (tokio::task::JoinHandle<()>, tokio::sync::oneshot::Sender<()>))> {
     let mut auth = TwitchAuthentications::load().await;
     //Get Twitch Client ID and Secret from .env
     let client_id = ::twitch_api::twitch_oauth2::types::ClientId::from(::dotenv::var("TWITCH_CLIENT_ID")?);
@@ -161,7 +205,7 @@ pub(in super) async fn create_twitch_client(rocket: rocket::Rocket<rocket::Build
     let client = reqwest::Client::new();
     let client = twitch_api::HelixClient::with_client(client);
     //Utilize the Client credentials grant flow to get an app access token
-    let access_token = twitch_api::twitch_oauth2::tokens::AppAccessToken::get_app_access_token(&client, client_id, client_secret, vec![]).await?;
+    let access_token = twitch_api::twitch_oauth2::tokens::AppAccessToken::get_app_access_token(&client, client_id.clone(), client_secret.clone(), vec![]).await?;
     //Pre-Create a conduit for eventsub
     let created_conduit = auth.conduit.is_none();
     let conduit = match auth.conduit.clone() {
@@ -172,47 +216,75 @@ pub(in super) async fn create_twitch_client(rocket: rocket::Rocket<rocket::Build
             conduit
         },
     };
-    auth.save().await?;
     let twitch = std::sync::Arc::new(Twitch {
+        client_id,
+        client_secret,
+        oauth_url: format!("{}twitch/oauth", get_base_url()),
         client,
         access_token,
         conduit,
         csrf_tokens: scc::HashIndex::new(),
         auth,
     });
+    twitch.remove_outdated().await;
+    twitch.auth.save().await?;
     //Attach Twitch Client to Rocket as a managed state and Register the Twitch Rocket Callback to finish Conduit setup, once the Webserver is online
-    let rocket = rocket
-        .manage(twitch.clone())
-    ;
-    let rocket = if created_conduit {
-        rocket.attach(rocket_callback::TwitchRocketCallback{client: twitch.clone()})
-    } else {
-        rocket
-    };
+    rocket = rocket.manage(twitch.clone());
+    if created_conduit {
+        rocket = rocket.attach(rocket_callback::TwitchRocketCallback{client: twitch.clone()});
+    }
 
-    Ok((rocket, twitch))
+    let refresh = refresh_tokens(twitch.clone());
+    Ok((rocket, twitch, refresh))
 }
-impl Twitch {
-    pub(crate) async fn get_new_oath(&self) -> Result<String, String> {
-        match &*TWITCH_OAUTH {
-            Ok(v) => {
-                let time = std::time::Instant::now();
-                let mut csrf:[u8; CSRF_TOKEN_LENGTH] = rand::random();
-                loop {
-                    match self.csrf_tokens.insert_async(csrf, time).await{
-                        Ok(_) => break,
-                        Err(_) => {
-                            //Collision?, generate a new token
-                            csrf = rand::random();
-                        }
-                    }
+
+fn refresh_tokens(twitch: std::sync::Arc<Twitch>) -> (tokio::task::JoinHandle<()>, tokio::sync::oneshot::Sender<()>) {
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(60*60));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let (sender, mut receiver) = tokio::sync::oneshot::channel();
+    let jh = tokio::spawn(async move {
+        let twitch = twitch;
+        let loop_work = ||async {
+            tracing::info!("Refreshing Twitch Tokens");
+            let mut auth = twitch.auth.authentications.first_entry_async().await;
+            while let Some(mut entry) = auth {
+                let user_id = entry.key().clone();
+                let valid = !entry.check_valid(twitch.as_ref()).await;
+                auth = entry.next_async().await;
+                if !valid {
+                    twitch.auth.authentications.remove_async(&user_id).await;
                 }
-                let token = base64::engine::general_purpose::URL_SAFE.encode(&csrf);
-                Ok(format!("https://id.twitch.tv/oauth2/authorize?redirect_uri={}&response_type=code&client_id={}&scope=&state={token}", v.url, v.client_id))
             }
-            Err(e) => {
-                Err(e.clone())
+            tracing::info!("Done Refreshing Twitch Tokens");
+        };
+        loop {
+            tokio::select! {
+            biased;
+            _ = &mut receiver => break,
+            _ = interval.tick() => {
+                loop_work().await;
             }
         }
+    }});
+    (jh, sender)
+}
+impl Twitch {
+    pub async fn get_new_csrf(&self) -> String {
+        let time = std::time::Instant::now();
+        let mut csrf:[u8; CSRF_TOKEN_LENGTH] = rand::random();
+        loop {
+            match self.csrf_tokens.insert_async(csrf, time).await{
+                Ok(_) => break,
+                Err(_) => {
+                    //Collision?, generate a new token
+                    csrf = rand::random();
+                }
+            }
+        }
+        base64::engine::general_purpose::URL_SAFE.encode(&csrf)
+    }
+    pub async fn get_new_oath(&self) -> String {
+        let token = self.get_new_csrf().await;
+        format!("https://id.twitch.tv/oauth2/authorize?redirect_uri={}&response_type=code&client_id={}&scope=&state={token}", self.oauth_url, self.client_id)
     }
 }

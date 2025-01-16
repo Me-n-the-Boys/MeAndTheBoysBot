@@ -102,7 +102,7 @@ impl super::Handler {
                 self.try_apply_vc_xp_timestamp(start, time, user_id).await;
             }
         }
-        tracing::info!("Incremental Check: Voice Xp applied");
+        tracing::info!("Incremental Check for {guild_id}: Voice Xp applied", guild_id=self.guild_id);
         //apply text xp
         {
             self.xp_txt.retain_async(|user_id, start|{
@@ -110,7 +110,7 @@ impl super::Handler {
                 true
             }).await;
         }
-        tracing::info!("Incremental Check: Text Xp applied");
+        tracing::info!("Incremental Check for {guild_id}: Text Xp applied", guild_id=self.guild_id);
     }
     pub(crate) async fn message_xp_react(&self, reaction: serenity::Reaction) {
         let time = serenity::Timestamp::now();

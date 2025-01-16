@@ -289,12 +289,11 @@ impl Cache {
                 handler.xp_incremental_check().await;
             }
         }
-        //Remove all csrf tokens that are older than 15 minutes
-        self.twitch.csrf_tokens.retain(|_, instant|instant.elapsed() > std::time::Duration::from_secs(15*60));
+        self.twitch.remove_outdated().await;
     }
 }
 const CACHE_PATH: &str = "cache.json";
-pub async fn init_client(twitch: Arc<crate::twitch_client::Twitch>) -> ::anyhow::Result<()> {
+pub async fn init_client(twitch: Arc<crate::twitch_client::Twitch>) -> ::anyhow::Result<serenity::Client> {
     tracing::info!("Client Startup");
 
     tracing::debug!("Getting Client Token");
@@ -359,7 +358,7 @@ pub async fn init_client(twitch: Arc<crate::twitch_client::Twitch>) -> ::anyhow:
         }))
     };
 
-    let mut client = serenity::Client::builder(&token, GatewayIntents::default().union(GatewayIntents::MESSAGE_CONTENT))
+    let client = serenity::Client::builder(&token, GatewayIntents::default().union(GatewayIntents::MESSAGE_CONTENT))
         .framework(framework)
         .event_handler(handler.clone())
         .await?;
@@ -384,8 +383,5 @@ pub async fn init_client(twitch: Arc<crate::twitch_client::Twitch>) -> ::anyhow:
         );
     });
 
-    client.start_autosharded().await?;
-    tracing::info!("Bye!");
-
-    Ok(())
+    Ok(client)
 }

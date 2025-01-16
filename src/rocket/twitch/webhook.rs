@@ -23,7 +23,7 @@ macro_rules! twitch_header {
     };
 }
 #[derive(Debug)]
-pub(super) struct TwitchEventsubMessage<'r> {
+pub struct TwitchEventsubMessage<'r> {
     id: &'r str,
     timestamp: chrono::DateTime<chrono::FixedOffset>,
     body: twitch_api::eventsub::Event,
@@ -82,7 +82,7 @@ impl<'r> rocket::data::FromData<'r> for TwitchEventsubMessage<'r> {
 }
 
 #[rocket::post("/twitch/eventsub", data="<twitch_event>")]
-pub(in super) async fn webhook<'r>(twitch_event: TwitchEventsubMessage<'r>) -> (rocket::http::Status, String) {
+pub async fn webhook<'r>(twitch_event: TwitchEventsubMessage<'r>) -> (rocket::http::Status, String) {
     if let Some(verification) = twitch_event.body.get_verification_request() {
         return (rocket::http::Status::Ok, verification.challenge.clone());
     }
