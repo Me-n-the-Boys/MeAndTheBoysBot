@@ -11,7 +11,7 @@ pub(crate) const BASE_SCHEME: &'static str = "https";
 pub(crate) const BASE_URL: &'static str = "debug.twitch.meandtheboys.c0d3m4513r.com";
 
 #[cfg(not(debug_assertions))]
-pub(crate) const BASE_URL: &'static str = "twitch.meandtheboys.c0d3m4513r.com/";
+pub(crate) const BASE_URL: &'static str = "twitch.meandtheboys.c0d3m4513r.com";
 
 pub(in super) async fn launch() -> anyhow::Result<(rocket::Rocket<rocket::Build>, serenity::Client, (tokio::task::JoinHandle<()>, tokio::sync::oneshot::Sender<()>))> {
     use ::base64::Engine;
