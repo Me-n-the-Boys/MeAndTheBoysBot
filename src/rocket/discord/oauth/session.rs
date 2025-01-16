@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use rocket::{time, Request};
 use rocket::http::private::cookie::Expiration;
 use rocket::request::Outcome;
@@ -21,7 +22,7 @@ impl<'a> rocket::request::FromRequest<'a> for Session {
     type Error = Responder;
 
     async fn from_request(request: &'a Request<'_>) -> Outcome<Self, Self::Error> {
-        let twitch: &crate::rocket::auth::Auth = match request.rocket().state() {
+        let twitch: &Arc<crate::rocket::auth::Auth> = match request.rocket().state() {
             Some(v) => v,
             None => return Outcome::Error((rocket::http::Status::InternalServerError, Responder::Error("Invalid configuration: Authentication information not found"))),
         };

@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use rocket::Request;
 use rocket::request::Outcome;
 
@@ -60,7 +61,7 @@ impl<'a, P:QueryParameter> rocket::request::FromRequest<'a> for CsrfToken<P> {
             "#).into())))),
         };
 
-        let auth: &super::auth::Auth = match request.rocket().state() {
+        let auth: &Arc<crate::rocket::auth::Auth> = match request.rocket().state() {
             Some(v) => v,
             None => return Outcome::Error((rocket::http::Status::InternalServerError, CsrfTokenError::Err(rocket::response::content::RawHtml(r#"
 <!DOCTYPE html>

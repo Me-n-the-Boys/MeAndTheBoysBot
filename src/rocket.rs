@@ -46,7 +46,6 @@ pub(in super) async fn launch() -> anyhow::Result<(rocket::Rocket<rocket::Build>
     ;
 
     let (rocket, auth, discord, refresh) = auth::Auth::new(rocket).await?;
-    let rocket = rocket.manage(auth);
 
     Ok((rocket, discord, refresh))
 }

@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use rocket::{time, Request};
 use rocket::request::Outcome;
 const SESSION_COOKIE: &str = "twitch_session";
@@ -47,7 +48,7 @@ impl<'a> rocket::request::FromRequest<'a> for Session {
     type Error = Responder;
 
     async fn from_request(request: &'a Request<'_>) -> Outcome<Self, Self::Error> {
-        let auth: &crate::rocket::auth::Auth = match request.rocket().state() {
+        let auth: &Arc<crate::rocket::auth::Auth> = match request.rocket().state() {
             Some(v) => v,
             None => return Outcome::Error((rocket::http::Status::InternalServerError, Responder::Error("Invalid configuration: Twitch client not found"))),
         };
