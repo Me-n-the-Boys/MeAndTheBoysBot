@@ -3,7 +3,6 @@ use std::sync::Arc;
 #[rocket::get("/")]
 pub async fn index<'r>(
     auth: &rocket::State<crate::rocket::auth::Auth>,
-    dc: &rocket::State<Arc<crate::discord_client::DiscordClient>>,
     twitch_session: super::twitch::oauth::session::Session,
     discord_session: super::discord::oauth::session::Session,
 ) -> rocket::response::content::RawHtml<String> {

@@ -48,7 +48,7 @@ impl<'a> rocket::request::FromRequest<'a> for Session {
     type Error = Responder;
 
     async fn from_request(request: &'a Request<'_>) -> Outcome<Self, Self::Error> {
-        let twitch: &Arc<crate::twitch_client::Twitch> = match request.rocket().state() {
+        let auth: &crate::rocket::auth::Auth = match request.rocket().state() {
             Some(v) => v,
             None => return Outcome::Error((rocket::http::Status::InternalServerError, Responder::Error("Invalid configuration: Twitch client not found"))),
         };
@@ -68,19 +68,19 @@ impl<'a> rocket::request::FromRequest<'a> for Session {
             },
         };
         request.cookies().add_private(cookie);
-        let mut auth = match &session {
+        let mut token = match &session {
             SessionCookie::V1 { user_id } => {
-                match twitch.auth.authentications.get_async(user_id).await {
+                match auth.twitch.auth.authentications.get_async(user_id).await {
                     None => return Outcome::Error((rocket::http::Status::SeeOther, Responder::Redirect(rocket::response::Redirect::to("/twitch/new_oauth")))),
                     Some(v) => v,
                 }
             }
         };
-        if !auth.check_valid(twitch).await {
-            twitch.auth.authentications.remove_async(&auth.user_id).await;
+        if !token.check_valid(&auth.twitch).await {
+            auth.twitch.auth.authentications.remove_async(&token.user_id).await;
             return Outcome::Error((rocket::http::Status::SeeOther, Responder::Redirect(rocket::response::Redirect::to("/twitch/new_oauth"))));
         }
-        let auth = auth.clone();
+        let auth = token.clone();
         Outcome::Success(Self{
             session,
             auth,

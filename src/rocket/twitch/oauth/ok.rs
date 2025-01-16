@@ -9,7 +9,7 @@ pub enum Responder {
 }
 
 #[rocket::get("/twitch/oauth?<code>&<scope>&<state>", rank=0)]
-pub async fn oauth_ok(code: &str, scope: &str, state: &str, _csrf: csrf::CsrfToken<csrf::State>, twitch: &rocket::State<Arc<crate::twitch_client::Twitch>>, cookie_jar: &rocket::http::CookieJar<'_>) -> Responder {
+pub async fn oauth_ok(code: &str, scope: &str, state: &str, _csrf: csrf::CsrfToken<csrf::State>, auth: &rocket::State<Arc<crate::rocket::auth::Auth>>, cookie_jar: &rocket::http::CookieJar<'_>) -> Responder {
     let _ = scope;
 
     let url = match url::Url::from_str(crate::rocket::auth::twitch::OAUTH_URL) {
@@ -17,13 +17,13 @@ pub async fn oauth_ok(code: &str, scope: &str, state: &str, _csrf: csrf::CsrfTok
         Err(err) => return Responder::Err((rocket::http::Status::InternalServerError, err.to_string().into())),
     };
     let mut builder = twitch_api::twitch_oauth2::UserToken::builder(
-        twitch.client_id.clone(),
-        twitch.client_secret.clone(),
+        auth.twitch.client_id.clone(),
+        auth.twitch.client_secret.clone(),
         url
     );
     builder.set_csrf(twitch_api::twitch_oauth2::CsrfTokenRef::from_str(state).to_owned());
     match builder.get_user_token(
-        &twitch.inner().client,
+        &auth.twitch.client,
         state,
         code
     ).await {
@@ -35,7 +35,7 @@ pub async fn oauth_ok(code: &str, scope: &str, state: &str, _csrf: csrf::CsrfTok
                     return Responder::Err((rocket::http::Status::InternalServerError, "Cannot create cookie from UserToken".into()))
                 },
             }
-            twitch.inner().auth.authentications.upsert_async(token.user_id.clone(), From::from(token.clone())).await;
+            auth.twitch.auth.authentications.upsert_async(token.user_id.clone(), From::from(token.clone())).await;
             Responder::Ok(rocket::response::Redirect::to("/twitch"))
         },
         Err(err) => {
