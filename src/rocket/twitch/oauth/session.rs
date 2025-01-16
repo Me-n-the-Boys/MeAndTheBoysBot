@@ -49,10 +49,6 @@ impl<'a> rocket::request::FromRequest<'a> for Session {
     type Error = Responder;
 
     async fn from_request(request: &'a Request<'_>) -> Outcome<Self, Self::Error> {
-        let auth: &Arc<crate::rocket::auth::Auth> = match request.rocket().state() {
-            Some(v) => v,
-            None => return Outcome::Error((rocket::http::Status::InternalServerError, Responder::Error("Invalid configuration: Twitch client not found"))),
-        };
         let mut cookie = match request.cookies().get_private(SESSION_COOKIE) {
             None => return Outcome::Error((rocket::http::Status::SeeOther, Responder::Redirect(rocket::response::Redirect::to(NEW_OAUTH_URL)))),
             Some(v) => v,
@@ -65,21 +61,25 @@ impl<'a> rocket::request::FromRequest<'a> for Session {
             Ok(v) => v,
             Err(_) => {
                 request.cookies().remove(SESSION_COOKIE);
-                return Outcome::Error((rocket::http::Status::SeeOther, Responder::Redirect(rocket::response::Redirect::to(NEW_OAUTH_URL))))
+                return Outcome::Forward(rocket::http::Status::Unauthorized);
             },
         };
         request.cookies().add_private(cookie);
+        let auth: &Arc<crate::rocket::auth::Auth> = match request.rocket().state() {
+            Some(v) => v,
+            None => return Outcome::Error((rocket::http::Status::InternalServerError, Responder::Error("Invalid configuration: Twitch client not found"))),
+        };
         let mut token = match &session {
             SessionCookie::V1 { user_id } => {
                 match auth.twitch.auth.authentications.get_async(user_id).await {
-                    None => return Outcome::Error((rocket::http::Status::SeeOther, Responder::Redirect(rocket::response::Redirect::to(NEW_OAUTH_URL)))),
+                    None => return Outcome::Forward(rocket::http::Status::Unauthorized),
                     Some(v) => v,
                 }
             }
         };
         if !token.check_valid(&auth.twitch).await {
             auth.twitch.auth.authentications.remove_async(&token.user_id).await;
-            return Outcome::Error((rocket::http::Status::SeeOther, Responder::Redirect(rocket::response::Redirect::to(NEW_OAUTH_URL))));
+            return Outcome::Forward(rocket::http::Status::Unauthorized);
         }
         let auth = token.clone();
         Outcome::Success(Self{

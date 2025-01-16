@@ -21,10 +21,6 @@ impl<'a> rocket::request::FromRequest<'a> for Session {
     type Error = Responder;
 
     async fn from_request(request: &'a Request<'_>) -> Outcome<Self, Self::Error> {
-        let twitch: &Arc<crate::rocket::auth::Auth> = match request.rocket().state() {
-            Some(v) => v,
-            None => return Outcome::Error((rocket::http::Status::InternalServerError, Responder::Error("Invalid configuration: Authentication information not found"))),
-        };
         let mut cookie = match request.cookies().get_private(SESSION_COOKIE) {
             None => return Outcome::Forward(rocket::http::Status::Unauthorized),
             Some(v) => v,
@@ -43,6 +39,10 @@ impl<'a> rocket::request::FromRequest<'a> for Session {
             },
         };
         request.cookies().add_private(cookie);
+        let twitch: &Arc<crate::rocket::auth::Auth> = match request.rocket().state() {
+            Some(v) => v,
+            None => return Outcome::Error((rocket::http::Status::InternalServerError, Responder::Error("Invalid configuration: Authentication information not found"))),
+        };
         let mut auth = match twitch.discord.auth.tokens.get_async(session.as_slice()).await {
             None => return Outcome::Forward(rocket::http::Status::Unauthorized),
             Some(v) => v,
