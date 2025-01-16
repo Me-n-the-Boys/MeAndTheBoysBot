@@ -28,7 +28,7 @@ jobs:
         with:
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          file: ./Dockerfile
+          file: ./Dockerfile_debug
 #          platforms: linux/amd64, linux/arm64
           platforms: linux/amd64
           push: true
