@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use rocket::{time, Request};
 use rocket::request::Outcome;
 const SESSION_COOKIE: &str = "twitch_session";
