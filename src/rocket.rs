@@ -35,6 +35,9 @@ pub(in super) async fn launch() -> anyhow::Result<(rocket::Rocket<rocket::Build>
     let rocket = rocket::custom(config)
         .mount("/", rocket::routes![
             index::index,
+            index::index_twitch,
+            index::index_discord,
+            index::index_none,
             twitch::webhook::webhook,
             twitch::oauth::new::new_oauth,
             twitch::oauth::ok::oauth_ok,

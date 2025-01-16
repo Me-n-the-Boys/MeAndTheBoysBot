@@ -1,10 +1,26 @@
 use std::sync::Arc;
 
-#[rocket::get("/")]
+#[rocket::get("/", rank = 3)]
+pub async fn index_none<'r>() -> rocket::response::Redirect {
+    rocket::response::Redirect::to(crate::rocket::auth::twitch::NEW_OAUTH_URL)
+}
+#[rocket::get("/", rank = 2)]
+pub async fn index_twitch<'r>(
+    _twitch_session: super::twitch::oauth::session::Session,
+) -> rocket::response::Redirect {
+    rocket::response::Redirect::to(crate::rocket::auth::discord::NEW_OAUTH_URL)
+}
+#[rocket::get("/", rank = 1)]
+pub async fn index_discord<'r>(
+    _discord_session: super::discord::oauth::session::Session,
+) -> rocket::response::Redirect {
+    rocket::response::Redirect::to(crate::rocket::auth::twitch::NEW_OAUTH_URL)
+}
+#[rocket::get("/", rank = 0)]
 pub async fn index<'r>(
-    auth: &rocket::State<Arc<crate::rocket::auth::Auth>>,
-    twitch_session: super::twitch::oauth::session::Session,
+    _auth: &rocket::State<Arc<crate::rocket::auth::Auth>>,
     discord_session: super::discord::oauth::session::Session,
+    twitch_session: super::twitch::oauth::session::Session,
 ) -> rocket::response::content::RawHtml<String> {
     let discord_name = &discord_session.current_user.name;
     let twitch_name = &twitch_session.auth.login;
