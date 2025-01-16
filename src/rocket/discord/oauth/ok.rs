@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use base64::Engine;
 use super::super::super::csrf;
 
@@ -8,7 +9,7 @@ pub enum Responder {
 }
 
 #[rocket::get("/discord/oauth?<code>&<state>", rank=0)]
-pub async fn oauth_ok(code: &str, state: &str, _csrf: csrf::CsrfToken<csrf::State>, auth: &rocket::State<crate::rocket::auth::Auth>, cookie_jar: &rocket::http::CookieJar<'_>) -> Responder {
+pub async fn oauth_ok(code: &str, state: &str, _csrf: csrf::CsrfToken<csrf::State>, auth: &rocket::State<Arc<crate::rocket::auth::Auth>>, cookie_jar: &rocket::http::CookieJar<'_>) -> Responder {
     let token = match crate::rocket::auth::discord::token::TokenRequest::authorization_code(code, state)
         .request_token(&auth.discord).await {
         Ok(v) =>v,
