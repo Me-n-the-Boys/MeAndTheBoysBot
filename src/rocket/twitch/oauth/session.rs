@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use rocket::{time, Request};
 use rocket::request::Outcome;
-use crate::rocket::auth::twitch::NEW_OAUTH_URL;
 const SESSION_COOKIE: &str = "twitch_session";
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -50,7 +49,7 @@ impl<'a> rocket::request::FromRequest<'a> for Session {
 
     async fn from_request(request: &'a Request<'_>) -> Outcome<Self, Self::Error> {
         let mut cookie = match request.cookies().get_private(SESSION_COOKIE) {
-            None => return Outcome::Error((rocket::http::Status::SeeOther, Responder::Redirect(rocket::response::Redirect::to(NEW_OAUTH_URL)))),
+            None => return Outcome::Forward(rocket::http::Status::Unauthorized),
             Some(v) => v,
         };
         if let Some(v) = time::OffsetDateTime::now_utc().checked_add(time::Duration::days(7)) {
