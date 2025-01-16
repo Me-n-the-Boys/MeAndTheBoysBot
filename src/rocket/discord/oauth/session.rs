@@ -2,6 +2,7 @@ use std::sync::Arc;
 use rocket::{time, Request};
 use rocket::http::private::cookie::Expiration;
 use rocket::request::Outcome;
+use crate::rocket::auth::discord::NEW_OAUTH_URL;
 pub const SESSION_COOKIE: &str = "discord_session";
 
 #[non_exhaustive]
@@ -27,7 +28,7 @@ impl<'a> rocket::request::FromRequest<'a> for Session {
             None => return Outcome::Error((rocket::http::Status::InternalServerError, Responder::Error("Invalid configuration: Authentication information not found"))),
         };
         let mut cookie = match request.cookies().get_private(SESSION_COOKIE) {
-            None => return Outcome::Error((rocket::http::Status::SeeOther, Responder::Redirect(rocket::response::Redirect::to("/discord/new_oauth")))),
+            None => return Outcome::Error((rocket::http::Status::SeeOther, Responder::Redirect(rocket::response::Redirect::to(NEW_OAUTH_URL)))),
             Some(v) => v,
         };
         if let Some(v) = time::OffsetDateTime::now_utc().checked_add(time::Duration::days(7)) {
@@ -40,12 +41,12 @@ impl<'a> rocket::request::FromRequest<'a> for Session {
             Ok(v) => v,
             Err(_) => {
                 request.cookies().remove(SESSION_COOKIE);
-                return Outcome::Error((rocket::http::Status::SeeOther, Responder::Redirect(rocket::response::Redirect::to("/discord/new_oauth"))))
+                return Outcome::Error((rocket::http::Status::SeeOther, Responder::Redirect(rocket::response::Redirect::to(NEW_OAUTH_URL))))
             },
         };
         request.cookies().add_private(cookie);
         let mut auth = match twitch.discord.auth.tokens.get_async(session.as_slice()).await {
-            None => return Outcome::Error((rocket::http::Status::SeeOther, Responder::Redirect(rocket::response::Redirect::to("/discord/new_oauth")))),
+            None => return Outcome::Error((rocket::http::Status::SeeOther, Responder::Redirect(rocket::response::Redirect::to(NEW_OAUTH_URL)))),
             Some(v) => v,
         };
         let mut http = serenity::http::Http::new(format!("Bearer {}", auth.access_token).as_str());
