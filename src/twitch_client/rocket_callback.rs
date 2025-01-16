@@ -1,6 +1,7 @@
-use crate::twitch_client::{get_base_url, Twitch, TWITCH_WS_SECRET_STRING};
 pub(super) struct TwitchRocketCallback{
-    pub(super) client: std::sync::Arc<Twitch>
+    pub client: twitch_api::HelixClient<'static, reqwest::Client>,
+    pub access_token: twitch_api::twitch_oauth2::AppAccessToken,
+    pub conduit: twitch_api::eventsub::Conduit,
 }
 
 #[rocket::async_trait]
@@ -13,18 +14,18 @@ impl rocket::fairing::Fairing for TwitchRocketCallback {
     }
 
     async fn on_liftoff(&self, rocket: &rocket::Rocket<rocket::Orbit>) {
-        match self.client.client.update_conduit_shards(
-            &self.client.conduit.id,
+        match self.client.update_conduit_shards(
+            &self.conduit.id,
             vec![
                 twitch_api::eventsub::Shard::new(
                     0,
                     twitch_api::eventsub::Transport::webhook(
-                        format!("{}twitch/eventsub", get_base_url()),
-                        TWITCH_WS_SECRET_STRING.clone(),
+                        const_format::concatc!(crate::rocket::BASE_SCHEME, "://", crate::rocket::BASE_URL, "/twitch/eventsub"),
+                        super::TWITCH_WS_SECRET_STRING.clone(),
                     ),
                 )
             ],
-            &self.client.access_token
+            &self.access_token
         ).await {
             Err(e) => {
                 tracing::error!("Failed to update conduit shards: {e:?}");

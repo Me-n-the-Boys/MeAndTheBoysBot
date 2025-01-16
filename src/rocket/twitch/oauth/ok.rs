@@ -12,7 +12,7 @@ pub enum Responder {
 pub async fn oauth_ok(code: &str, scope: &str, state: &str, _csrf: csrf::CsrfToken<csrf::State>, twitch: &rocket::State<Arc<crate::twitch_client::Twitch>>, cookie_jar: &rocket::http::CookieJar<'_>) -> Responder {
     let _ = scope;
 
-    let url = match url::Url::from_str(twitch.oauth_url.as_str()) {
+    let url = match url::Url::from_str(crate::rocket::auth::twitch::OAUTH_URL) {
         Ok(v) => v,
         Err(err) => return Responder::Err((rocket::http::Status::InternalServerError, err.to_string().into())),
     };

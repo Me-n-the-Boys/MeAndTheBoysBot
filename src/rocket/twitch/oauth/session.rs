@@ -1,8 +1,7 @@
 use std::sync::Arc;
 use rocket::{time, Request};
-use rocket::http::private::cookie::Expiration;
 use rocket::request::Outcome;
-const SESSION_COOKIE: &str = "session";
+const SESSION_COOKIE: &str = "twitch_session";
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "v")]
@@ -23,7 +22,7 @@ impl SessionCookie {
     pub fn as_cookie(&self) -> Result<rocket::http::Cookie<'static>, serde_json::Error> {
         let mut cookie = rocket::http::Cookie::new(SESSION_COOKIE, serde_json::to_string(&self)?);
         if let Some(v) = time::OffsetDateTime::now_utc().checked_add(time::Duration::days(7)) {
-            cookie.set_expires(Expiration::DateTime(v));
+            cookie.set_expires(v);
         }
         cookie.set_http_only(true);
         cookie.set_secure(true);
@@ -58,7 +57,7 @@ impl<'a> rocket::request::FromRequest<'a> for Session {
             Some(v) => v,
         };
         if let Some(v) = time::OffsetDateTime::now_utc().checked_add(time::Duration::days(7)) {
-            cookie.set_expires(Expiration::DateTime(v));
+            cookie.set_expires(v);
         }
         cookie.set_secure(Some(true));
         let session = match serde_json::from_str::<SessionCookie>(cookie.value()) {

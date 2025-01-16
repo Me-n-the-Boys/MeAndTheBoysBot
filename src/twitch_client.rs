@@ -1,6 +1,5 @@
 mod rocket_callback;
 
-use base64::Engine;
 use twitch_api::twitch_oauth2::{AccessToken, TwitchToken, UserToken};
 
 pub(in super) static TWITCH_WS_SECRET:std::sync::LazyLock<[u8;64]>  = std::sync::LazyLock::new(||{
@@ -11,16 +10,13 @@ pub(in super) static TWITCH_WS_SECRET_STRING:std::sync::LazyLock<String>  = std:
     base64::engine::general_purpose::URL_SAFE.encode(&*TWITCH_WS_SECRET)
 });
 
-pub(crate) const CSRF_TOKEN_LENGTH: usize = 32;
 #[non_exhaustive]
 pub(crate) struct Twitch {
     pub(super) client_id: ::twitch_api::twitch_oauth2::types::ClientId,
     pub(super) client_secret: ::twitch_api::twitch_oauth2::types::ClientSecret,
-    pub(super) oauth_url: String,
     pub(super) client: twitch_api::HelixClient<'static, reqwest::Client>,
     pub(super) access_token: twitch_api::twitch_oauth2::AppAccessToken,
     conduit: twitch_api::eventsub::Conduit,
-    pub(super) csrf_tokens: scc::HashIndex<[u8; CSRF_TOKEN_LENGTH], std::time::Instant>,
     pub(super) auth: TwitchAuthentications,
 }
 
@@ -71,19 +67,6 @@ impl TwitchAuthentications {
             }
         }
         Ok(())
-    }
-
-    pub(crate) async fn remove_outdated(&self){
-    }
-}
-impl Twitch {
-    /// Csrf tokens are valid for 15 minutes
-    const CSRF_TOKEN_VALIDITY_SECONDS: u64 = 60*15;
-    /// Removes any outdated tokens
-    pub(crate) async fn remove_outdated(&self){
-        let remove_outdated_csrf =self.csrf_tokens.retain_async(|_, instant|instant.elapsed() > std::time::Duration::from_secs(Self::CSRF_TOKEN_VALIDITY_SECONDS));
-        let remove_outdated_auth = self.auth.remove_outdated();
-        tokio::join!(remove_outdated_csrf,remove_outdated_auth);
     }
 }
 
@@ -190,13 +173,8 @@ impl From<twitch_api::twitch_oauth2::UserToken> for TwitchAuthentication {
     }
 }
 
-pub(crate) fn get_base_url() -> String {
-    let debug = ::dotenv::var("DEBUG_URL").unwrap_or_default();
-    format!("https://{debug}twitch.meandtheboys.c0d3m4513r.com/")
-}
-
 pub(crate) const TWITCH_AUTH_PATH: &str = "twitch_authentications.json";
-pub(in super) async fn create_twitch_client(mut rocket: rocket::Rocket<rocket::Build>) -> ::anyhow::Result<(rocket::Rocket<rocket::Build>, std::sync::Arc<Twitch>, (tokio::task::JoinHandle<()>, tokio::sync::oneshot::Sender<()>))> {
+pub(in super) async fn create_twitch_client(mut rocket: rocket::Rocket<rocket::Build>) -> ::anyhow::Result<(rocket::Rocket<rocket::Build>, Twitch)> {
     let mut auth = TwitchAuthentications::load().await;
     //Get Twitch Client ID and Secret from .env
     let client_id = ::twitch_api::twitch_oauth2::types::ClientId::from(::dotenv::var("TWITCH_CLIENT_ID")?);
@@ -216,75 +194,23 @@ pub(in super) async fn create_twitch_client(mut rocket: rocket::Rocket<rocket::B
             conduit
         },
     };
-    let twitch = std::sync::Arc::new(Twitch {
+    let twitch = Twitch {
         client_id,
         client_secret,
-        oauth_url: format!("{}twitch/oauth", get_base_url()),
         client,
         access_token,
         conduit,
-        csrf_tokens: scc::HashIndex::new(),
         auth,
-    });
-    twitch.remove_outdated().await;
+    };
     twitch.auth.save().await?;
-    //Attach Twitch Client to Rocket as a managed state and Register the Twitch Rocket Callback to finish Conduit setup, once the Webserver is online
-    rocket = rocket.manage(twitch.clone());
+    //Register the Twitch Rocket Callback to finish Conduit setup, once the Webserver is online
     if created_conduit {
-        rocket = rocket.attach(rocket_callback::TwitchRocketCallback{client: twitch.clone()});
+        rocket = rocket.attach(rocket_callback::TwitchRocketCallback{
+            client: twitch.client.clone(),
+            access_token: twitch.access_token.clone(),
+            conduit: twitch.conduit.clone(),
+        });
     }
 
-    let refresh = refresh_tokens(twitch.clone());
-    Ok((rocket, twitch, refresh))
-}
-
-fn refresh_tokens(twitch: std::sync::Arc<Twitch>) -> (tokio::task::JoinHandle<()>, tokio::sync::oneshot::Sender<()>) {
-    let mut interval = tokio::time::interval(std::time::Duration::from_secs(60*60));
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    let (sender, mut receiver) = tokio::sync::oneshot::channel();
-    let jh = tokio::spawn(async move {
-        let twitch = twitch;
-        let loop_work = ||async {
-            tracing::info!("Refreshing Twitch Tokens");
-            let mut auth = twitch.auth.authentications.first_entry_async().await;
-            while let Some(mut entry) = auth {
-                let user_id = entry.key().clone();
-                let valid = !entry.check_valid(twitch.as_ref()).await;
-                auth = entry.next_async().await;
-                if !valid {
-                    twitch.auth.authentications.remove_async(&user_id).await;
-                }
-            }
-            tracing::info!("Done Refreshing Twitch Tokens");
-        };
-        loop {
-            tokio::select! {
-            biased;
-            _ = &mut receiver => break,
-            _ = interval.tick() => {
-                loop_work().await;
-            }
-        }
-    }});
-    (jh, sender)
-}
-impl Twitch {
-    pub async fn get_new_csrf(&self) -> String {
-        let time = std::time::Instant::now();
-        let mut csrf:[u8; CSRF_TOKEN_LENGTH] = rand::random();
-        loop {
-            match self.csrf_tokens.insert_async(csrf, time).await{
-                Ok(_) => break,
-                Err(_) => {
-                    //Collision?, generate a new token
-                    csrf = rand::random();
-                }
-            }
-        }
-        base64::engine::general_purpose::URL_SAFE.encode(&csrf)
-    }
-    pub async fn get_new_oath(&self) -> String {
-        let token = self.get_new_csrf().await;
-        format!("https://id.twitch.tv/oauth2/authorize?redirect_uri={}&response_type=code&client_id={}&scope=&state={token}", self.oauth_url, self.client_id)
-    }
+    Ok((rocket, twitch))
 }

@@ -2,46 +2,29 @@ use std::sync::Arc;
 
 #[rocket::get("/")]
 pub async fn index<'r>(
-    twitch: &rocket::State<Arc<crate::twitch_client::Twitch>>,
+    auth: &rocket::State<crate::rocket::auth::Auth>,
     dc: &rocket::State<Arc<crate::discord_client::DiscordClient>>,
-    session: super::twitch::oauth::session::Session
+    twitch_session: super::twitch::oauth::session::Session,
+    discord_session: super::discord::oauth::session::Session,
 ) -> rocket::response::content::RawHtml<String> {
-    let mut channels = String::new();
-    let channels_iter;
-    let mut channels_iter = match twitch.auth.enabled_channels.get_async(&session.auth.user_id).await {
-        None => None,
-        Some(v) => {
-            channels_iter = v;
-            channels_iter.first_entry_async().await
-        }
-    };
-
-    while let Some(channels_entry) = channels_iter {
-        if let Some(v) = decorate_channel(&channels_entry.key(), &*channels_entry, &dc).await {
-            channels.push_str(v.as_str());
-        }
-        channels_iter = channels_entry.next_async().await;
-    }
-
-    let csrf_token = twitch.get_new_csrf().await;
-
+    let discord_name = &discord_session.current_user.name;
+    let twitch_name = &twitch_session.auth.login;
+    let twitch_id = &twitch_session.auth.user_id;
     rocket::response::content::RawHtml(format!(r#"
 <!DOCTYPE html>
 <html lang="en">
     <head>
         <meta charset="utf-8">
         <meta name="color-scheme" content="light dark">
-        <title>Discord Channel Configuration</title>
+        <title>Hello World</title>
     </head>
     <body>
-        <h1>Discord Channel Configuration</h1>
-        <form action="/twitch" method="post">
-            <input type="hidden" name="csrf_token" value="{csrf_token}"></input>
-            <input type="submit" value="Save"></input>
-            <div>
-                {channels}
-            </div>
-        </form>
+        <h1>Hello World</h1>
+        <p>You are successfully logged in as:</p>
+        <ul>
+            <li>Twitch: {twitch_name} ({twitch_id})</li>
+            <li>Discord: {discord_name}</li>
+        </ul>
     </body>
 </html>
 "#))

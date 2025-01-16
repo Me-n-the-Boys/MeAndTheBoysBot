@@ -4,8 +4,16 @@ pub(self) mod csrf;
 pub(self) mod base64;
 mod index;
 mod discord;
+pub mod auth;
 
-pub(in super) fn launch() -> anyhow::Result<rocket::Rocket<rocket::Build>> {
+pub(crate) const BASE_SCHEME: &'static str = "https";
+#[cfg(debug_assertions)]
+pub(crate) const BASE_URL: &'static str = "debug.twitch.meandtheboys.c0d3m4513r.com";
+
+#[cfg(not(debug_assertions))]
+pub(crate) const BASE_URL: &'static str = "twitch.meandtheboys.c0d3m4513r.com/";
+
+pub(in super) async fn launch() -> anyhow::Result<(rocket::Rocket<rocket::Build>, serenity::Client, (tokio::task::JoinHandle<()>, tokio::sync::oneshot::Sender<()>))> {
     use ::base64::Engine;
     let secret_key = match dotenv::var("ROCKET_SECRET_KEY") {
         Ok(v) => match ::base64::engine::general_purpose::STANDARD.decode(v){
@@ -30,9 +38,15 @@ pub(in super) fn launch() -> anyhow::Result<rocket::Rocket<rocket::Build>> {
             twitch::webhook::webhook,
             twitch::oauth::new::new_oauth,
             twitch::oauth::ok::oauth_ok,
-            twitch::oauth::err::oauth_err
+            twitch::oauth::err::oauth_err,
+            discord::oauth::new::new_oauth,
+            discord::oauth::ok::oauth_ok,
+            discord::oauth::err::oauth_err,
         ])
     ;
 
-    Ok(rocket)
+    let (rocket, auth, discord, refresh) = auth::Auth::new(rocket).await?;
+    let rocket = rocket.manage(auth);
+
+    Ok((rocket, discord, refresh))
 }

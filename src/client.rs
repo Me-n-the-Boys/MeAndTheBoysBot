@@ -11,7 +11,7 @@ use serenity::all::GatewayIntents;
 /// User data, which is stored and accessible in all command invocations
 struct Data {
     handler: Arc<OuterHandler>,
-    twitch: Arc<crate::twitch_client::Twitch>,
+    auth: Arc<crate::rocket::auth::Auth>,
 }
 #[derive(Debug, serde::Deserialize, serde::Serialize, Default)]
 struct OuterHandler{
@@ -237,7 +237,7 @@ impl Default for Handler {
 
 struct Cache {
     handler: HandlerWrapper,
-    twitch: Arc<crate::twitch_client::Twitch>,
+    auth: Arc<crate::rocket::auth::Auth>,
 }
 
 impl Cache {
@@ -259,19 +259,17 @@ impl Cache {
             }
         }
         tracing::info!("Serializing twitch");
-        let serialized = match serde_json::to_vec(&self.twitch.auth){
-            Err(v) => {
-                tracing::error!("Error serializing twitch: {v}");
-                return;
-            }
-            Ok(v) => v,
-        };
-        match tokio::fs::write(crate::twitch_client::TWITCH_AUTH_PATH, serialized).await {
-            Ok(_) => {
-                tracing::info!("Twitch saved");
-            },
+        match self.auth.twitch.auth.save().await {
+            Ok(()) => {},
             Err(err) => {
                 tracing::error!("Error saving twitch: {err}");
+            }
+        }
+        tracing::info!("Serializing discord");
+        match self.auth.discord.auth.save().await {
+            Ok(()) => {},
+            Err(err) => {
+                tracing::error!("Error saving discord: {err}");
             }
         }
         //TODO: This is a bit hacky, but has to be done this way, to keep this send.
@@ -289,11 +287,10 @@ impl Cache {
                 handler.xp_incremental_check().await;
             }
         }
-        self.twitch.remove_outdated().await;
     }
 }
 const CACHE_PATH: &str = "cache.json";
-pub async fn init_client(twitch: Arc<crate::twitch_client::Twitch>) -> ::anyhow::Result<serenity::Client> {
+pub async fn init_client(auth: Arc<crate::rocket::auth::Auth>) -> ::anyhow::Result<serenity::Client> {
     tracing::info!("Client Startup");
 
     tracing::debug!("Getting Client Token");
@@ -309,10 +306,10 @@ pub async fn init_client(twitch: Arc<crate::twitch_client::Twitch>) -> ::anyhow:
                     .unwrap_or_default()
             ).inspect_err(|err|tracing::info!("Error reading cache. Falling back to Defaults. Error: {err}"))
             .unwrap_or_default();
-        let twitch = twitch.clone();
+        let auth = auth.clone();
         Cache {
             handler,
-            twitch,
+            auth,
         }
     };
 
@@ -335,7 +332,7 @@ pub async fn init_client(twitch: Arc<crate::twitch_client::Twitch>) -> ::anyhow:
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
                 Ok(Data {
                     handler: handler_1,
-                    twitch,
+                    auth,
                 })
             })
         })

@@ -24,23 +24,14 @@ async fn main() -> ::anyhow::Result<()>{
 
     let mut js = tokio::task::JoinSet::<::anyhow::Result<()>>::new();
 
-    //Get initial rocket instance
-    let rocket = rocket::launch()?;
-    //Start Twitch client and add necessary rocket configuration
-    let (rocket, twitch, (refresh_handle, refresh_abort)) = twitch_client::create_twitch_client(rocket).await?;
-    //Configure Discord client
-    let mut client = client::init_client(twitch).await?;
-    //And add necessary rocket configuration
-    let dc_client = discord_client::DiscordClient::new(&client);
-    let rocket = rocket.manage(dc_client);
-    //Start the rocket and client
+    let (rocket, mut discord, (refresh_handle, refresh_exit)) = rocket::launch().await?;
     js.spawn(async {rocket.launch().await?; Ok(())});
-    js.spawn(async move { client.start_autosharded().await?; Ok(())});
+    js.spawn(async move { discord.start_autosharded().await?; Ok(())});
     while let Some(task) = js.join_next().await {
         match task.map_or_else(|err|Err(::anyhow::format_err!("{err}")), |res| res) {
             Ok(()) => {},
             Err(mut err) => {
-                if let Err(()) = refresh_abort.send(()) {
+                if let Err(()) = refresh_exit.send(()) {
                     err = err.context("Failed to send abort signal to refresh task");
                 }
                 if let Err(refresh_err) = refresh_handle.await {

@@ -60,7 +60,7 @@ impl<'a, P:QueryParameter> rocket::request::FromRequest<'a> for CsrfToken<P> {
             "#).into())))),
         };
 
-        let twitch: &std::sync::Arc<&crate::twitch_client::Twitch> = match request.rocket().state() {
+        let auth: &super::auth::Auth = match request.rocket().state() {
             Some(v) => v,
             None => return Outcome::Error((rocket::http::Status::InternalServerError, CsrfTokenError::Err(rocket::response::content::RawHtml(r#"
 <!DOCTYPE html>
@@ -78,7 +78,7 @@ impl<'a, P:QueryParameter> rocket::request::FromRequest<'a> for CsrfToken<P> {
             "#.into())))),
         };
 
-        match twitch.csrf_tokens.get_async(token.data.as_slice()).await {
+        match auth.csrf_tokens.get_async(token.data.as_slice()).await {
             Some(entry) => {
                 entry.remove_entry();
                 Outcome::Success(Self{

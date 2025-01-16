@@ -1,0 +1,1 @@
+pub const OAUTH_URL: &'static str = const_format::concatc!(super::super::BASE_SCHEME,"://",super::super::BASE_URL,"/twitch/oauth",);
