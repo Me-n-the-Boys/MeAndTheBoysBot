@@ -363,21 +363,30 @@ pub async fn init_client(auth: Arc<crate::rocket::auth::Auth>) -> ::anyhow::Resu
     let shard_manager = client.shard_manager.clone();
 
     tokio::spawn(async move {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("Could not register ctrl+c handler");
+        let mut js = tokio::task::JoinSet::new();
+        js.spawn(async {
+            tokio::signal::ctrl_c().await.expect("Could not register ctrl+c handler");
+
+        });
+        #[cfg(unix)]
+        js.spawn(tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).expect("Could not register SIGTERM handler").recv());
+        #[cfg(windows)]
+        js.spawn(tokio::signal::windows::ctrl_close().expect("Could not register CTRL-SHUTDOWN handler").recv());
+        let _ = js.join_next().await; //We don't care, if a thread panicked. If something happened here, we assume that the program should shut down.
+        js.abort_all();
         let _ = sender.send(());
-        tokio::join!(
-            async {
-                match saver.await {
-                    Ok(v) => v.save().await,
-                    Err(err) => {
-                        tracing::error!("Cache saver Thread Panicked: {err}");
-                    }
+        let mut new_js = tokio::task::JoinSet::new();
+        new_js.spawn(async{js.join_all().await;});
+        new_js.spawn(async {
+            match saver.await {
+                Ok(v) => v.save().await,
+                Err(err) => {
+                    tracing::error!("Cache saver Thread Panicked: {err}");
                 }
-            },
-            shard_manager.shutdown_all()
-        );
+            }
+        });
+        new_js.spawn(shard_manager.shutdown_all());
+        new_js.join_all().await;
     });
 
     Ok(client)
