@@ -5,7 +5,7 @@ pub const NEW_OAUTH_URL: &'static str = const_format::concatc!(super::super::BAS
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct Discord {
-    client_id: String,
+    pub client_id: String,
     client_secret: String,
     client: reqwest::Client,
     pub auth: DiscordAuthentications,
