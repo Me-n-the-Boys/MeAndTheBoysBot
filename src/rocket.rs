@@ -27,6 +27,7 @@ pub(in super) async fn launch() -> anyhow::Result<(rocket::Rocket<rocket::Build>
         }
     };
     let config = rocket::config::Config{
+        port: 8001, //TODO: remove this line once everything is stable. Nginx requests this on port 8000, and only port 8000 is exposed. Anything else than 8000 is not reachable from the outside.
         address: std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
         ident: rocket::config::Ident::none(),
         secret_key,
