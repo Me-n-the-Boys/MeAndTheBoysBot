@@ -363,40 +363,9 @@ pub async fn init_client(auth: Arc<crate::rocket::auth::Auth>) -> ::anyhow::Resu
     let shard_manager = client.shard_manager.clone();
 
     tokio::spawn(async move {
-        let mut js = tokio::task::JoinSet::new();
-        js.spawn(async {
-            tokio::signal::ctrl_c().await.expect("Could not register ctrl+c handler");
-            None
-        });
-        #[cfg(unix)]
-        {
-            let mut handler = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).expect("Could not register SIGTERM handler");
-            js.spawn(async move{ handler.recv().await});
-        }
-        #[cfg(windows)]
-        {
-            let mut handler = tokio::signal::windows::ctrl_close().expect("Could not register CTRL-SHUTDOWN handler");
-            js.spawn(async move{ handler.recv().await});
-        }
-        let _ = js.join_next().await; //We don't care, if a thread panicked. If something happened here, we assume that the program should shut down.
-        js.abort_all();
+        super::SHUTDOWN.notified().await;
         let _ = sender.send(());
         let mut new_js = tokio::task::JoinSet::new();
-        new_js.spawn(async move {while let Some(v) = js.join_next().await {
-            match v {
-                Ok(_) => {},
-                Err(err) => {
-                    match err.try_into_panic() {
-                        Ok(v) => {
-                            std::panic::resume_unwind(v)
-                        }
-                        Err(_) => {
-                            //we assume, that the error here was due to the task being cancelled.
-                        }
-                    }
-                }
-            }
-        }});
         new_js.spawn(async {
             match saver.await {
                 Ok(v) => v.save().await,
