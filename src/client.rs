@@ -382,7 +382,21 @@ pub async fn init_client(auth: Arc<crate::rocket::auth::Auth>) -> ::anyhow::Resu
         js.abort_all();
         let _ = sender.send(());
         let mut new_js = tokio::task::JoinSet::new();
-        new_js.spawn(async{js.join_all().await;});
+        new_js.spawn(async{while let Some(v) = js.join_next().await {
+            match v {
+                Ok(_) => {},
+                Err(err) => {
+                    match err.try_into_panic() {
+                        Ok(v) => {
+                            std::panic::resume_unwind(v)
+                        }
+                        Err(_) => {
+                            //we assume, that the error here was due to the task being cancelled.
+                        }
+                    }
+                }
+            }
+        }});
         new_js.spawn(async {
             match saver.await {
                 Ok(v) => v.save().await,
