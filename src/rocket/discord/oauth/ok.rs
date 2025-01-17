@@ -5,11 +5,21 @@ use super::super::super::csrf;
 #[derive(rocket::response::Responder)]
 pub enum Responder {
     Ok(rocket::response::Redirect),
+    CsrfError(csrf::CsrfTokenError),
+    NoAuth(crate::rocket::auth::NoAuth),
     HtmlErr((rocket::http::Status, rocket::response::content::RawHtml<std::borrow::Cow<'static, str>>)),
 }
 
 #[rocket::get("/discord/oauth?<code>&<state>", rank=0)]
-pub async fn oauth_ok(code: &str, state: &str, _csrf: csrf::CsrfToken<csrf::State>, auth: &rocket::State<Arc<crate::rocket::auth::Auth>>, cookie_jar: &rocket::http::CookieJar<'_>) -> Responder {
+pub async fn oauth_ok(code: &str, state: &str, csrf: Result<csrf::CsrfToken<csrf::State>, csrf::CsrfTokenError>, auth: Result<&crate::rocket::auth::Auth, crate::rocket::auth::NoAuth>, cookie_jar: &rocket::http::CookieJar<'_>) -> Responder {
+    let auth = match auth {
+        Err(err) => return Responder::NoAuth(err),
+        Ok(auth) => auth,
+    };
+    match csrf {
+        Err(err) => return Responder::CsrfError(err),
+        Ok(_) => { },
+    }
     let token = match crate::rocket::auth::discord::token::TokenRequest::authorization_code(code, state)
         .request_token(&auth.discord).await {
         Ok(v) =>v,

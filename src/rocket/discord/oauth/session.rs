@@ -2,6 +2,8 @@ use std::sync::Arc;
 use rocket::{time, Request};
 use rocket::http::private::cookie::Expiration;
 use rocket::request::Outcome;
+use crate::rocket::auth::NoAuth;
+
 pub const SESSION_COOKIE: &str = "discord_session";
 
 #[non_exhaustive]
@@ -13,6 +15,7 @@ pub struct Session {
 
 #[derive(rocket::response::Responder, Debug)]
 pub enum Responder {
+    NoAuth(NoAuth),
     Error(&'static str),
 }
 
@@ -41,7 +44,7 @@ impl<'a> rocket::request::FromRequest<'a> for Session {
         request.cookies().add_private(cookie);
         let twitch: &Arc<crate::rocket::auth::Auth> = match request.rocket().state() {
             Some(v) => v,
-            None => return Outcome::Error((rocket::http::Status::InternalServerError, Responder::Error("Invalid configuration: Authentication information not found"))),
+            None => return Outcome::Error((rocket::http::Status::InternalServerError, Responder::NoAuth(NoAuth))),
         };
         let mut auth = match twitch.discord.auth.tokens.get_async(session.as_slice()).await {
             None => return Outcome::Forward(rocket::http::Status::Unauthorized),

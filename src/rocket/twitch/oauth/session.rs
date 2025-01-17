@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use rocket::{time, Request};
 use rocket::request::Outcome;
+use crate::rocket::auth::NoAuth;
+
 const SESSION_COOKIE: &str = "twitch_session";
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -36,16 +38,9 @@ pub struct Session {
     pub(crate) session: SessionCookie,
     pub(crate) auth: crate::twitch_client::TwitchAuthentication,
 }
-
-#[derive(rocket::response::Responder, Debug)]
-pub enum Responder {
-    Redirect(rocket::response::Redirect),
-    Error(&'static str),
-}
-
 #[rocket::async_trait]
 impl<'a> rocket::request::FromRequest<'a> for Session {
-    type Error = Responder;
+    type Error = NoAuth;
 
     async fn from_request(request: &'a Request<'_>) -> Outcome<Self, Self::Error> {
         let mut cookie = match request.cookies().get_private(SESSION_COOKIE) {
@@ -66,7 +61,7 @@ impl<'a> rocket::request::FromRequest<'a> for Session {
         request.cookies().add_private(cookie);
         let auth: &Arc<crate::rocket::auth::Auth> = match request.rocket().state() {
             Some(v) => v,
-            None => return Outcome::Error((rocket::http::Status::InternalServerError, Responder::Error("Invalid configuration: Twitch client not found"))),
+            None => return Outcome::Error((rocket::http::Status::InternalServerError, NoAuth)),
         };
         let mut token = match &session {
             SessionCookie::V1 { user_id } => {

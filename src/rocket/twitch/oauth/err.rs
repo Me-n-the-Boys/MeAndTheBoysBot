@@ -1,9 +1,11 @@
 use super::super::super::csrf;
 
 #[rocket::get("/twitch/oauth?<error>&<error_description>&<state>", rank=1)]
-pub async fn oauth_err<'r>(error: &'r str, error_description: &'r str, state: &'r str, _csrf: csrf::CsrfToken<csrf::State>) -> rocket::response::content::RawHtml<String> {
+pub async fn oauth_err<'r>(error: &'r str, error_description: &'r str, state: &'r str, csrf: Result<csrf::CsrfToken<csrf::State>, csrf::CsrfTokenError>) -> Result<rocket::response::content::RawHtml<String>, csrf::CsrfTokenError> {
+    let _ = csrf?;
+
     let _ = state;
-    rocket::response::content::RawHtml(format!(r#"
+    Ok(rocket::response::content::RawHtml(format!(r#"
 <!DOCTYPE html>
 <html lang="en">
     <head>
@@ -17,5 +19,5 @@ pub async fn oauth_err<'r>(error: &'r str, error_description: &'r str, state: &'
         <p>Description: <code>{error_description}</code></p>
     </body>
 </html>
-"#))
+"#)))
 }

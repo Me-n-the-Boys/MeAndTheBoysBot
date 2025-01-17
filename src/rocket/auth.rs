@@ -5,7 +5,27 @@ use std::sync::Arc;
 use base64::Engine;
 
 pub(super) const CSRF_TOKEN_LENGTH: usize = 32;
-
+#[derive(Debug, Copy, Clone)]
+pub struct NoAuth;
+impl<'a, 'b: 'a> rocket::response::Responder<'a, 'b> for NoAuth {
+    fn respond_to(self, request: &rocket::Request) -> rocket::response::Result<'static> {
+        (rocket::http::Status::InternalServerError,  rocket::response::content::RawHtml(r#"
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="color-scheme" content="light dark">
+        <title>Internal Server Error</title>
+    </head>
+    <body>
+        <h1>Internal Server Error</h1>
+        <p>There was an error processing your request.</p>
+        <p>Authentication Information regaring OAUTH is supposed to be present, but isn't.</p>
+    </body>
+</html>
+        "#)).respond_to(request)
+    }
+}
 #[non_exhaustive]
 pub struct Auth {
     pub(super) csrf_tokens: scc::HashIndex<[u8; CSRF_TOKEN_LENGTH], std::time::Instant>,
@@ -38,6 +58,18 @@ impl Auth {
             }
         }
         base64::engine::general_purpose::URL_SAFE.encode(&csrf)
+    }
+}
+
+#[rocket::async_trait]
+impl<'a> rocket::request::FromRequest<'a> for &'a Auth {
+    type Error = NoAuth;
+
+    async fn from_request(request: &'a rocket::Request<'_>) -> rocket::request::Outcome<Self, Self::Error> {
+        match request.rocket().state::<Arc<Auth>>() {
+            Some(v) => rocket::request::Outcome::Success(v.as_ref()),
+            None => rocket::request::Outcome::Error((rocket::http::Status::InternalServerError, NoAuth)),
+        }
     }
 }
 

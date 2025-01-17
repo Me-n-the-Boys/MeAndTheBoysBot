@@ -5,12 +5,22 @@ use super::super::super::csrf;
 #[derive(rocket::response::Responder)]
 pub enum Responder {
     Ok(rocket::response::Redirect),
+    NoAuth(crate::rocket::auth::NoAuth),
+    CsrdError(csrf::CsrfTokenError),
     Err((rocket::http::Status, std::borrow::Cow<'static, str>)),
 }
 
 #[rocket::get("/twitch/oauth?<code>&<scope>&<state>", rank=0)]
-pub async fn oauth_ok(code: &str, scope: &str, state: &str, _csrf: csrf::CsrfToken<csrf::State>, auth: &rocket::State<Arc<crate::rocket::auth::Auth>>, cookie_jar: &rocket::http::CookieJar<'_>) -> Responder {
+pub async fn oauth_ok(code: &str, scope: &str, state: &str, csrf: Result<csrf::CsrfToken<csrf::State>, csrf::CsrfTokenError>, auth: Result<&crate::rocket::auth::Auth, crate::rocket::auth::NoAuth>, cookie_jar: &rocket::http::CookieJar<'_>) -> Responder {
     let _ = scope;
+    let auth = match auth {
+        Err(err) => return Responder::NoAuth(err),
+        Ok(auth) => auth,
+    };
+    match csrf {
+        Err(err) => return Responder::CsrdError(err),
+        Ok(_) => { },
+    }
 
     let url = match url::Url::from_str(crate::rocket::auth::twitch::OAUTH_URL) {
         Ok(v) => v,
