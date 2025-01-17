@@ -8,7 +8,7 @@ pub async fn index_none<'r>(
     if twitch_session.is_none() {
         rocket::response::Redirect::to(crate::rocket::auth::twitch::NEW_OAUTH_URL)
     } else {
-        rocket::response::Redirect::to(crate::rocket::auth::twitch::NEW_OAUTH_URL)
+        rocket::response::Redirect::to(crate::rocket::auth::discord::NEW_OAUTH_URL)
     }
 }
 
