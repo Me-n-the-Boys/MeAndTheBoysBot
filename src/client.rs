@@ -366,12 +366,18 @@ pub async fn init_client(auth: Arc<crate::rocket::auth::Auth>) -> ::anyhow::Resu
         let mut js = tokio::task::JoinSet::new();
         js.spawn(async {
             tokio::signal::ctrl_c().await.expect("Could not register ctrl+c handler");
-
+            None
         });
         #[cfg(unix)]
-        js.spawn(tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).expect("Could not register SIGTERM handler").recv());
+        {
+            let mut handler = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).expect("Could not register SIGTERM handler");
+            js.spawn(async move{ handler.recv().await});
+        }
         #[cfg(windows)]
-        js.spawn(tokio::signal::windows::ctrl_close().expect("Could not register CTRL-SHUTDOWN handler").recv());
+        {
+            let mut handler = tokio::signal::windows::ctrl_close().expect("Could not register CTRL-SHUTDOWN handler");
+            js.spawn(async move{ handler.recv().await});
+        }
         let _ = js.join_next().await; //We don't care, if a thread panicked. If something happened here, we assume that the program should shut down.
         js.abort_all();
         let _ = sender.send(());
@@ -385,7 +391,7 @@ pub async fn init_client(auth: Arc<crate::rocket::auth::Auth>) -> ::anyhow::Resu
                 }
             }
         });
-        new_js.spawn(shard_manager.shutdown_all());
+        new_js.spawn(async move {shard_manager.shutdown_all().await});
         new_js.join_all().await;
     });
 
