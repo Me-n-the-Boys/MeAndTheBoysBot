@@ -1,21 +1,17 @@
 use std::sync::Arc;
 
-#[rocket::get("/", rank = 3)]
-pub async fn index_none<'r>() -> rocket::response::Redirect {
-    rocket::response::Redirect::to(crate::rocket::auth::twitch::NEW_OAUTH_URL)
-}
-#[rocket::get("/", rank = 2)]
-pub async fn index_twitch<'r>(
-    _twitch_session: super::twitch::oauth::session::Session,
-) -> rocket::response::Redirect {
-    rocket::response::Redirect::to(crate::rocket::auth::discord::NEW_OAUTH_URL)
-}
 #[rocket::get("/", rank = 1)]
-pub async fn index_discord<'r>(
-    _discord_session: super::discord::oauth::session::Session,
+pub async fn index_none<'r>(
+    _discord_session: Option<super::discord::oauth::session::Session>,
+    twitch_session: Option<super::twitch::oauth::session::Session>,
 ) -> rocket::response::Redirect {
-    rocket::response::Redirect::to(crate::rocket::auth::twitch::NEW_OAUTH_URL)
+    if twitch_session.is_none() {
+        rocket::response::Redirect::to(crate::rocket::auth::twitch::NEW_OAUTH_URL)
+    } else {
+        rocket::response::Redirect::to(crate::rocket::auth::twitch::NEW_OAUTH_URL)
+    }
 }
+
 #[rocket::get("/", rank = 0)]
 pub async fn index<'r>(
     _auth: &rocket::State<Arc<crate::rocket::auth::Auth>>,
