@@ -382,7 +382,7 @@ pub async fn init_client(auth: Arc<crate::rocket::auth::Auth>) -> ::anyhow::Resu
         js.abort_all();
         let _ = sender.send(());
         let mut new_js = tokio::task::JoinSet::new();
-        new_js.spawn(async{while let Some(v) = js.join_next().await {
+        new_js.spawn(async move {while let Some(v) = js.join_next().await {
             match v {
                 Ok(_) => {},
                 Err(err) => {
