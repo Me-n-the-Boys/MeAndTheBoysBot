@@ -322,6 +322,7 @@ pub async fn init_client(auth: Arc<crate::rocket::auth::Auth>) -> ::anyhow::Resu
         .options(poise::FrameworkOptions {
             commands: vec![
                 commands::ping(),
+                commands::copy_emoji(),
                 commands::debug(),
                 commands::settings(),
             ],
