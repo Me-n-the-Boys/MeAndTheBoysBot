@@ -36,7 +36,7 @@ pub use settings::settings;
     default_member_permissions = "MANAGE_GUILD_EXPRESSIONS",
     required_bot_permissions = "MANAGE_GUILD_EXPRESSIONS",
 )]
-pub async fn copy_emoji(ctx: Context<'_>, #[description = "Exactly ONE Discord emoji"] #[min_length = 1] emoji: String, #[description = "Name of the emoji in the guild"] #[min_length = 2] name: String) -> Result<(), Error> {
+pub async fn copy_emoji(ctx: Context<'_>, #[description = "Exactly ONE Discord emoji"] #[min_length = 1] emoji: String, #[description = "Name of the emoji in the guild"] #[min_length = 2] name: Option<String>) -> Result<(), Error> {
     let emoji_p = match serenity::utils::parse_emoji(emoji) {
         Some(v) => v,
         None => {
@@ -44,6 +44,7 @@ pub async fn copy_emoji(ctx: Context<'_>, #[description = "Exactly ONE Discord e
             return Ok(());
         }
     };
+    let name = name.unwrap_or_else(||emoji_p.name.clone());
 
     if emoji_p.name.chars().any(|c| !c.is_alphanumeric() && c != '_') {
         ctx.send(CreateReply::default().content("The name of the emoji must be at least 2 characters long and can only contain alphanumeric characters and underscores.").ephemeral(true).reply(true)).await?;
