@@ -82,7 +82,12 @@ pub async fn copy_emoji(ctx: Context<'_>, #[description = "Exactly ONE Discord e
         }
     };
     let image = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, image.as_ref());
-    match guild.create_emoji(&ctx, &name, &image).await{
+    let image = if emoji_p.animated {
+        format!("data:image/gif;base64,{image}")
+    } else {
+        format!("data:image/png;base64,{image}")
+    };
+    match guild.create_emoji(&ctx, &name, image.as_str()).await{
         Ok(emoji) => {
             ctx.send(CreateReply::default().content(
                 format!(
