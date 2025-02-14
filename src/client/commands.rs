@@ -62,22 +62,40 @@ pub async fn copy_emoji(ctx: Context<'_>, #[description = "Exactly ONE Discord e
         Ok(guild.id)
     }) {
         Err(err) => {
-            ctx.send(CreateReply::default().content(err).ephemeral(true).reply(true)).await?;
+            ctx.send(CreateReply::default().content(format!("Error getting emojis: {err}")).ephemeral(true).reply(true)).await?;
             return Ok(());
         }
         Ok(v) => v
     };
 
-    let image = reqwest::Client::new().get(emoji_p.url()).send().await?.bytes().await?;
+    let image = match reqwest::Client::new().get(emoji_p.url()).send().await {
+        Ok(v) => match v.bytes().await {
+            Ok(v) => v,
+            Err(err) => {
+                ctx.send(CreateReply::default().content(format!("Error getting emoji (request content): {err}")).ephemeral(true).reply(true)).await?;
+                return Ok(());
+            }
+        },
+        Err(err) => {
+            ctx.send(CreateReply::default().content(format!("Error getting emoji (request): {err}")).ephemeral(true).reply(true)).await?;
+            return Ok(());
+        }
+    };
     let image = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, image.as_ref());
-    let emoji = guild.create_emoji(&ctx, &name, &image).await?;
-    ctx.send(CreateReply::default().content(
-        format!(
-            "Copied emoji: <{}:{}:{}>",
-            if emoji.animated {"a"} else {""},
-            emoji.name,
-            emoji.id.get()
-        )
-    ).reply(true)).await?;
+    match guild.create_emoji(&ctx, &name, &image).await{
+        Ok(emoji) => {
+            ctx.send(CreateReply::default().content(
+                format!(
+                    "Copied emoji: <{}:{}:{}>",
+                    if emoji.animated {"a"} else {""},
+                    emoji.name,
+                    emoji.id.get()
+                )
+            ).reply(true)).await?;
+        }
+        Err(err) => {
+            ctx.send(CreateReply::default().content(format!("Error creating emoji: {err}")).ephemeral(true).reply(true)).await?;
+        }
+    }
     Ok(())
 }
