@@ -100,7 +100,7 @@ jobs:
           docker push create ghcr.io/me-n-the-boys/meandtheboisbot:latest
 
       - name: Create and Push nightly manifest
-        if: ${{ github.ref == 'refs/heads/main' }}
+        if: ${{ github.ref == 'refs/heads/dev' }}
         run: |
           version=$(yq .package.version Cargo.toml)
           docker manifest create ghcr.io/me-n-the-boys/meandtheboisbot:nightly ghcr.io/me-n-the-boys/meandtheboisbot:${version}-amd64 ghcr.io/me-n-the-boys/meandtheboisbot:${version}-arm64
