@@ -83,7 +83,7 @@
                 ExposedPorts = {
                     "8000" = {};
                 };
-                WORKDIR = "/data";
+                WorkingDir = "/data";
                 Cmd = [ "${nixpkgs.lib.getExe package}" ];
             };
 
