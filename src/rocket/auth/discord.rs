@@ -1,7 +1,7 @@
 pub mod token;
 
-pub const OAUTH_URL: &'static str = const_format::concatc!(super::super::BASE_SCHEME, "://", super::super::BASE_URL, "/discord/oauth");
-pub const NEW_OAUTH_URL: &'static str = const_format::concatc!(super::super::BASE_SCHEME, "://", super::super::BASE_URL, "/discord/new_oauth");
+pub const OAUTH_URL: &'static str = const_format::concatcp!(super::super::BASE_SCHEME, "://", super::super::BASE_URL, "/discord/oauth");
+pub const NEW_OAUTH_URL: &'static str = const_format::concatcp!(super::super::BASE_SCHEME, "://", super::super::BASE_URL, "/discord/new_oauth");
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct Discord {
