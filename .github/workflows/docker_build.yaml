@@ -7,6 +7,9 @@ on:
       - dev
 jobs:
   build:
+    permissions:
+      contents: write #nessesary for tag creation
+      packages: write #packages write
     strategy:
       matrix:
         arch: [amd64, arm64]
@@ -70,6 +73,8 @@ jobs:
           docker tag $(yq .package.name Cargo.toml):$version-${{ matrix.arch }} ghcr.io/me-n-the-boys/meandtheboisbot:$version-${{ matrix.arch }}
           docker push ghcr.io/me-n-the-boys/meandtheboisbot:$version-${{ matrix.arch }}
   multi-arch:
+    permissions:
+      packages: write
     needs: build
     runs-on: ubuntu-latest
     steps:
