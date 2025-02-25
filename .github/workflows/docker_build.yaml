@@ -93,7 +93,7 @@ jobs:
           docker manifest create ghcr.io/me-n-the-boys/meandtheboisbot:${version} ghcr.io/me-n-the-boys/meandtheboisbot:${version}-amd64 ghcr.io/me-n-the-boys/meandtheboisbot:${version}-arm64
           docker manifest annotate ghcr.io/me-n-the-boys/meandtheboisbot:${version} ghcr.io/me-n-the-boys/meandtheboisbot:${version}-amd64 --arch amd64
           docker manifest annotate ghcr.io/me-n-the-boys/meandtheboisbot:${version} ghcr.io/me-n-the-boys/meandtheboisbot:${version}-arm64 --arch arm64
-          docker push create ghcr.io/me-n-the-boys/meandtheboisbot:${version}
+          docker manifest push ghcr.io/me-n-the-boys/meandtheboisbot:${version}
 
       - name: Create and Push latest manifest
         if: ${{ github.ref == 'refs/heads/main' }}
@@ -102,7 +102,7 @@ jobs:
           docker manifest create ghcr.io/me-n-the-boys/meandtheboisbot:latest ghcr.io/me-n-the-boys/meandtheboisbot:${version}-amd64 ghcr.io/me-n-the-boys/meandtheboisbot:${version}-arm64
           docker manifest annotate ghcr.io/me-n-the-boys/meandtheboisbot:latest ghcr.io/me-n-the-boys/meandtheboisbot:${version}-amd64 --arch amd64
           docker manifest annotate ghcr.io/me-n-the-boys/meandtheboisbot:latest ghcr.io/me-n-the-boys/meandtheboisbot:${version}-arm64 --arch arm64
-          docker push create ghcr.io/me-n-the-boys/meandtheboisbot:latest
+          docker manifest push ghcr.io/me-n-the-boys/meandtheboisbot:latest
 
       - name: Create and Push nightly manifest
         if: ${{ github.ref == 'refs/heads/dev' }}
@@ -111,4 +111,4 @@ jobs:
           docker manifest create ghcr.io/me-n-the-boys/meandtheboisbot:nightly ghcr.io/me-n-the-boys/meandtheboisbot:${version}-amd64 ghcr.io/me-n-the-boys/meandtheboisbot:${version}-arm64
           docker manifest annotate ghcr.io/me-n-the-boys/meandtheboisbot:nightly ghcr.io/me-n-the-boys/meandtheboisbot:${version}-amd64 --arch amd64
           docker manifest annotate ghcr.io/me-n-the-boys/meandtheboisbot:nightly ghcr.io/me-n-the-boys/meandtheboisbot:${version}-arm64 --arch arm64
-          docker push create ghcr.io/me-n-the-boys/meandtheboisbot:nightly
+          docker manifest push ghcr.io/me-n-the-boys/meandtheboisbot:nightly
