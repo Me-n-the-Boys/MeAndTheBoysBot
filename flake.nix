@@ -73,11 +73,11 @@
             mainProgram = "me-and-the-boys-dcbot";
           };
         };
-        docker = pkgs.dockerTools.buildImage {
+        docker = pkgs.dockerTools.buildLayeredImage {
             name = manifest.name;
             tag = "${manifest.version}-${arch."${system}"}";
 
-            copyToRoot = [ package ];
+            contents = [ package ];
 
             config = {
                 ExposedPorts = {
