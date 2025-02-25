@@ -9,6 +9,7 @@ jobs:
   build:
     permissions:
       contents: write #nessesary for tag creation
+      actions: write #manage cache
       packages: write #packages write
     strategy:
       matrix:
@@ -31,6 +32,7 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Restore and cache Nix store
         uses: nix-community/cache-nix-action@v6
+        continue-on-error: true
         with:
           # restore and save a cache using this key
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix') }}
