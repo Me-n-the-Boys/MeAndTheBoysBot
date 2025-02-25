@@ -12,8 +12,13 @@
   };
 
   outputs = { self, nixpkgs, utils, rust-overlay, ... }:
-    utils.lib.eachDefaultSystem (system:
+    utils.lib.eachSystem ["x86_64-linux" "aarch64-linux"] (system:
       let
+        arch = {
+            "x86_64-linux" = "amd64";
+            "aarch64-linux" = "arm64";
+        };
+
         overlays = [ (import rust-overlay) ];
         pkgs = import nixpkgs {
             inherit system overlays;
@@ -70,7 +75,7 @@
         };
         docker = pkgs.dockerTools.buildImage {
             name = manifest.name;
-            tag = manifest.version;
+            tag = "${manifest.version}-${arch."${system}"}";
 
             copyToRoot = [ package ];
 

@@ -1,36 +1,107 @@
-name: build docker release
+name: build docker
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 0 1 * *"
   push:
     branches:
       - main
+      - dev
 jobs:
-  push:
-    name: "rust-dc-bot"
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+  build:
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            system: x86_64-linux
+            runner: ubuntu-24.04
+          - arch: arm64
+            system: aarch64-linux
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
+      # Check out the package
       - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
+
+      # Install Nix and cache its store
+      - uses: nixbuild/nix-quick-install-action@v27
+      - name: Restore and cache Nix store
+        uses: nix-community/cache-nix-action@v5
         with:
-          buildkitd-flags: --debug
+          # restore and save a cache using this key
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix') }}
+          # if there's no cache hit, restore a cache by this prefix
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          # collect garbage until Nix store size (in bytes) is at most this number
+          # before trying to save a new cache
+          gc-max-store-size-linux: 1073741824
+          # do purge caches
+          purge: true
+          # purge all versions of the cache
+          purge-prefixes: cache-${{ runner.os }}-
+          # created more than this number of seconds ago relative to the start of the `Post Restore` phase
+          purge-created: 0
+          # except the version with the `primary-key`, if it exists
+          purge-primary-key: never
+
+      # Build the package defined in the Nix Flake
+      - name: Build the derivation defined in the Nix Flake
+        run: nix --extra-experimental-features nix-command --extra-experimental-features flakes build .#$(yq .package.name Cargo.toml)-docker
+
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: "me-n-the-boys"
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
+      - name: Load image
+        run: docker load -i result
+      - name: Tag commit
+        if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' }}
+        run: |
+          tag=$(yq .package.version Cargo.toml)
+          git tag "$tag"
+          git push origin "$tag"
+
+      - name: re-tag as version and push
+        if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' }}
+        run: |
+          version=$(yq .package.version Cargo.toml)
+          docker tag $(yq .package.name Cargo.toml):$version-${{ matrix.arch }} ghcr.io/me-n-the-boys/meandtheboisbot:$version-${{ matrix.arch }}
+          docker push ghcr.io/me-n-the-boys/meandtheboisbot:$version-${{ matrix.arch }}
+  multi-arch:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      # Check out the package
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
         with:
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          file: ./Dockerfile
-#          platforms: linux/amd64, linux/arm64
-          platforms: linux/amd64
-          push: true
-          tags: |
-            ghcr.io/me-n-the-boys/meandtheboisbot:latest
+          registry: ghcr.io
+          username: "me-n-the-boys"
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and Push Version manifest
+        run: |
+          version=$(yq .package.version Cargo.toml)
+          docker manifest create ghcr.io/me-n-the-boys/meandtheboisbot:${version} ghcr.io/me-n-the-boys/meandtheboisbot:${version}-amd64 ghcr.io/me-n-the-boys/meandtheboisbot:${version}-arm64
+          docker manifest annotate ghcr.io/me-n-the-boys/meandtheboisbot:${version} ghcr.io/me-n-the-boys/meandtheboisbot:${version}-amd64 --arch amd64
+          docker manifest annotate ghcr.io/me-n-the-boys/meandtheboisbot:${version} ghcr.io/me-n-the-boys/meandtheboisbot:${version}-arm64 --arch arm64
+          docker push create ghcr.io/me-n-the-boys/meandtheboisbot:${version}
+
+      - name: Create and Push latest manifest
+        if: ${{ github.ref == 'refs/heads/main' }}
+        run: |
+          version=$(yq .package.version Cargo.toml)
+          docker manifest create ghcr.io/me-n-the-boys/meandtheboisbot:latest ghcr.io/me-n-the-boys/meandtheboisbot:${version}-amd64 ghcr.io/me-n-the-boys/meandtheboisbot:${version}-arm64
+          docker manifest annotate ghcr.io/me-n-the-boys/meandtheboisbot:latest ghcr.io/me-n-the-boys/meandtheboisbot:${version}-amd64 --arch amd64
+          docker manifest annotate ghcr.io/me-n-the-boys/meandtheboisbot:latest ghcr.io/me-n-the-boys/meandtheboisbot:${version}-arm64 --arch arm64
+          docker push create ghcr.io/me-n-the-boys/meandtheboisbot:latest
+
+      - name: Create and Push nightly manifest
+        if: ${{ github.ref == 'refs/heads/main' }}
+        run: |
+          version=$(yq .package.version Cargo.toml)
+          docker manifest create ghcr.io/me-n-the-boys/meandtheboisbot:nightly ghcr.io/me-n-the-boys/meandtheboisbot:${version}-amd64 ghcr.io/me-n-the-boys/meandtheboisbot:${version}-arm64
+          docker manifest annotate ghcr.io/me-n-the-boys/meandtheboisbot:nightly ghcr.io/me-n-the-boys/meandtheboisbot:${version}-amd64 --arch amd64
+          docker manifest annotate ghcr.io/me-n-the-boys/meandtheboisbot:nightly ghcr.io/me-n-the-boys/meandtheboisbot:${version}-arm64 --arch arm64
+          docker push create ghcr.io/me-n-the-boys/meandtheboisbot:nightly
