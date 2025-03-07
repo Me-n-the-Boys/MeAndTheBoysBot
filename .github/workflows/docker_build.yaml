@@ -68,8 +68,8 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Load image
         run: docker load -i result
-      - name: Tag commit
-        if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' }}
+      - name: Tag commit as Release
+        if: ${{ github.ref == 'refs/heads/main' }}
         run: |
           tag=$(yq .package.version Cargo.toml)
           git tag "$tag"
