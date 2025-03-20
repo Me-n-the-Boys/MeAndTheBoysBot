@@ -46,9 +46,6 @@ chrono = { version = "0.4.39", features = ["serde"] }
 
 const_format = "0.2.34"
 
-[[bin]]
-name="dummy"
-path="dummy.rs"
 
 [profile.release]
 lto = true
