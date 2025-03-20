@@ -15,7 +15,7 @@ pub(crate) const BASE_URL: &'static str = "twitch.meandtheboys.c0d3m4513r.com";
 
 pub(in super) async fn launch() -> anyhow::Result<(rocket::Rocket<rocket::Build>, serenity::Client, (tokio::task::JoinHandle<()>, tokio::sync::oneshot::Sender<()>))> {
     use ::base64::Engine;
-    let secret_key = match dotenv::var("ROCKET_SECRET_KEY") {
+    let secret_key = match ::std::env::var("ROCKET_SECRET_KEY") {
         Ok(v) => match ::base64::engine::general_purpose::STANDARD.decode(v){
             Ok(v) => rocket::config::SecretKey::from(v.as_slice()),
             Err(_) => {

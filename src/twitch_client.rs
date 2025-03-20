@@ -177,8 +177,8 @@ pub(crate) const TWITCH_AUTH_PATH: &str = "twitch_authentications.json";
 pub(in super) async fn create_twitch_client(mut rocket: rocket::Rocket<rocket::Build>) -> ::anyhow::Result<(rocket::Rocket<rocket::Build>, Twitch)> {
     let mut auth = TwitchAuthentications::load().await;
     //Get Twitch Client ID and Secret from .env
-    let client_id = ::twitch_api::twitch_oauth2::types::ClientId::from(::dotenv::var("TWITCH_CLIENT_ID")?);
-    let client_secret = ::twitch_api::twitch_oauth2::types::ClientSecret::from(::dotenv::var("TWITCH_CLIENT_SECRET")?);
+    let client_id = ::twitch_api::twitch_oauth2::types::ClientId::from(::std::env::var("TWITCH_CLIENT_ID")?);
+    let client_secret = ::twitch_api::twitch_oauth2::types::ClientSecret::from(::std::env::var("TWITCH_CLIENT_SECRET")?);
     //Create Twitch Client
     let client = reqwest::Client::new();
     let client = twitch_api::HelixClient::with_client(client);

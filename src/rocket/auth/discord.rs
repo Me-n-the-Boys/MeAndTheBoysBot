@@ -15,8 +15,8 @@ impl Discord {
     pub async fn new() -> ::anyhow::Result<Self> {
         let auth = DiscordAuthentications::load().await;
         //Get Twitch Client ID and Secret from .env
-        let client_id = ::dotenv::var("DISCORD_CLIENT_ID")?;
-        let client_secret = ::dotenv::var("DISCORD_CLIENT_SECRET")?;
+        let client_id = ::std::env::var("DISCORD_CLIENT_ID")?;
+        let client_secret = ::std::env::var("DISCORD_CLIENT_SECRET")?;
 
         Ok(Self{
             client_id,
