@@ -9,11 +9,11 @@ edition = "2021"
 
 [dependencies]
 #.env support
-dotenv = "0.15"
+dotenvy = "0.15"
 #logging
 tracing = {version = "0.1", features = ["attributes"]}
-tracing-attributes = "0.1"
 tracing-subscriber = { version = "0.3" , features = ["env-filter"]}
+log = "0.4.26"
 #errors
 anyhow = "1"
 
@@ -21,9 +21,11 @@ anyhow = "1"
 serde = { version = "1", features = ["rc"] }
 serde_derive = "1"
 serde_json = "1"
+
 #async stuff
 tokio = { version = "^1.4", features = ["macros", "signal", "rt-multi-thread"] }
 futures = "0.3.31"
+
 #Read-Optimized, async, concurrent HashMap
 sdd = "3.0.5"
 scc = { version = "2.3.0", features = ["serde"] }
@@ -31,21 +33,24 @@ scc = { version = "2.3.0", features = ["serde"] }
 #bot
 serenity = { version = "^0.12", features = ["cache", "temp_cache", "framework", "standard_framework", "rustls_backend"] }
 poise = "0.6.1"
+
 #Twitch Streaming notifications for bot
 twitch_api = { version = "0.7.0-rc.8", features = ["eventsub", "helix", "client", "reqwest"] }
 reqwest = { version = "0.12.12", default-features = false, features = ["rustls-tls"]}
 url = "2.5.4"
 base64 = "0.22.1"
+
 #Getting Streaming Notifications via Webhooks
 rocket = { version = "0.5.1" , features = ["secrets"]}
+
 #Webhook verification/security
 rand = "0.9.0"
 hmac = "0.12.1"
 sha2 = "0.10.8"
 chrono = { version = "0.4.39", features = ["serde"] }
-
 const_format = "0.2.34"
 
+sqlx = {version = "0.8.3", features = ["postgres", "runtime-tokio"]}
 
 [profile.release]
 lto = true

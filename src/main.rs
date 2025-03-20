@@ -8,22 +8,83 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::registry;
 
 static SHUTDOWN: tokio::sync::Notify = tokio::sync::Notify::const_new();
+static RUNTIME: std::sync::LazyLock<tokio::runtime::Runtime> = std::sync::LazyLock::new(||{
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("Could not create tokio runtime")
+});
 
-#[tokio::main]
-async fn main() -> ::anyhow::Result<()>{
+const FAIL2BAN_TARGET:&str = "fail2ban";
+struct Fail2BanFilter;
+impl<S>tracing_subscriber::layer::Filter<S> for Fail2BanFilter {
+    fn enabled(&self, meta: &tracing::Metadata<'_>, _: &tracing_subscriber::layer::Context<'_, S>) -> bool {
+        meta.target() == FAIL2BAN_TARGET
+    }
+    fn callsite_enabled(&self, meta: &'static tracing::Metadata<'static>) -> tracing::subscriber::Interest {
+        if meta.target() == FAIL2BAN_TARGET {
+            tracing::subscriber::Interest::always()
+        } else {
+            tracing::subscriber::Interest::never()
+        }
+    }
+}
+
+fn main() -> ::anyhow::Result<()>{
     // This will load the environment variables located at `./.env`, relative to
     // the CWD. See `./.env.example` for an example on how to structure this.
-    dotenv::dotenv()?;
+    dotenvy::dotenv()?;
 
-    let stdout = tracing_subscriber::fmt::Layer::default();
+    {
+        let path = std::env::var_os("LOG_PATH").unwrap_or_else(|| "logs".to_string().into());
+        let mut path = std::path::PathBuf::from(path);
+        std::fs::create_dir_all(&path).expect("Failed to create log directory");
+        path.push("rocket.log");
+        let rocket_logfile = std::fs::File::create(&path).expect("Failed to create rocket log file");
+        path.pop();
+        path.push("fail2ban.log");
+        let fail2ban_logfile = std::fs::File::create(&path).expect("Failed to create fail2ban log file");
 
-    let subscriber = registry::Registry::default() // provide underlying span data store
-        .with(tracing_subscriber::EnvFilter::from_default_env()) // filter spans based on env var
-        .with(stdout); // log to stdout
-        // .with(webhook) //publish to discord
-        // .with(ht); // publish to honeycomb backend
+        use tracing_subscriber::Layer;
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::util::SubscriberInitExt;
 
-    tracing::subscriber::set_global_default(subscriber).expect("setting global default failed");
+        let registry = tracing_subscriber::registry();
+        #[cfg(tokio_unstable)]
+        let registry = registry.with(console_subscriber::spawn());
+        registry
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_thread_ids(true)
+                    .with_thread_names(true)
+                    .with_target(true)
+                    .with_ansi(false)
+                    .with_writer(rocket_logfile)
+            )
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_thread_ids(true)
+                    .with_thread_names(true)
+                    .with_target(true)
+                    .with_ansi(false)
+                    .with_writer(fail2ban_logfile)
+                    .with_filter(Fail2BanFilter{})
+            )
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .pretty()
+                    .with_filter(tracing_subscriber::filter::EnvFilter::from_default_env())
+            )
+            .init();
+        log::info!("Initialized logging");
+    }
+
+    RUNTIME.block_on(async_main())
+}
+
+#[tokio::main]
+async fn async_main() -> ::anyhow::Result<()>{
+    let _a = get_db().await;
 
     let shutdown_watcher = tokio::spawn(async{
         let mut js = tokio::task::JoinSet::new();
@@ -91,8 +152,18 @@ async fn main() -> ::anyhow::Result<()>{
             }
         }
     }
-    
+
     Ok(())
+}
+
+pub(crate) async fn get_db<'a>() -> sqlx::PgPool {
+    static MYSQL: tokio::sync::OnceCell<sqlx::PgPool> = tokio::sync::OnceCell::const_new();
+    MYSQL.get_or_init(||async {
+        let options = sqlx::postgres::PgConnectOptions::new();
+        let pool = sqlx::Pool::connect_with(options).await.expect("Failed to connect to postgres");
+        log::info!("Connected to postgres");
+        pool
+    }).await.clone()
 }
 
 struct Shutdown;
