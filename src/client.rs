@@ -44,8 +44,12 @@ WHEN NOT MATCHED THEN INSERT (guild_id) VALUES (guilds.guild_id)
     where Self: 'async_trait, 'life0: 'async_trait
     {
         Box::pin(async move {
+            let guild_id = match new_state.guild_id{
+                Some(v) => v,
+                None => return,
+            };
             let db = crate::get_db().await;
-            let apply_vc = async {if let Some(guild) = new_state.guild_id {
+            let apply_vc = async {
                 match new_state.channel_id {
                     None => {
                         match sqlx::query!("WITH vc_xp_apply AS (
@@ -53,7 +57,7 @@ WHEN NOT MATCHED THEN INSERT (guild_id) VALUES (guilds.guild_id)
 ) MERGE INTO xp_user USING vc_xp_apply ON xp_user.guild_id = vc_xp_apply.guild_id AND xp_user.user_id = vc_xp_apply.user_id
 WHEN MATCHED THEN UPDATE SET vc = xp_user.vc + (now() - vc_xp_apply.time)
 WHEN NOT MATCHED THEN INSERT (guild_id, user_id, vc) VALUES (vc_xp_apply.guild_id, vc_xp_apply.user_id, (now() - vc_xp_apply.time))
-").execute(&db).await {
+", crate::converti(guild_id.get()), crate::converti(new_state.user_id.get())).execute(&db).await {
                             Ok(v) => match v.rows_affected(){
                                 0 => {
                                     tracing::error!("Error applying voice xp: No rows affected");
@@ -70,7 +74,7 @@ WHEN NOT MATCHED THEN INSERT (guild_id, user_id, vc) VALUES (vc_xp_apply.guild_i
 USING (SELECT $1::bigint as guild_id, $2::bigint as user_id) as input ON xp_vc_tmp.guild_id = input.guild_id AND xp_vc_tmp.user_id = input.user_id
 WHEN MATCHED THEN DO NOTHING
 WHEN NOT MATCHED THEN INSERT (guild_id, user_id, time) VALUES (input.guild_id, input.user_id, now())
-"#, crate::converti(guild.get()), crate::converti(new_state.user_id.get())).execute(&db).await {
+"#, crate::converti(guild_id.get()), crate::converti(new_state.user_id.get())).execute(&db).await {
                             Ok(_) => {},
                             Err(err) => {
                                 tracing::error!("Error adding user to voice xp tmp: {err}");
@@ -78,52 +82,21 @@ WHEN NOT MATCHED THEN INSERT (guild_id, user_id, time) VALUES (input.guild_id, i
                         }
                     }
                 }
-            }};
-            tokio::join!(
-                apply_vc
-                self.vc_join_channel_temp_channel(ctx, new_state.user_id, channel, old_state),
-            );
-
-                let handler = self.guilds.entry_async(guild).await.or_insert(Handler{
-                    guild_id: guild,
-                    ..Default::default()
-                });
-                let handler = &*handler;
+            };
+            let temp_channel = async {
                 match new_state.channel_id {
                     Some(channel) => {
-                        let old_state = &old_state;
-                        let apply_vc_other_guild = async {
-                            if Some(guild) != old_state.as_ref().map(|v|v.guild_id).flatten() {
-                                if let Some(old_state) = old_state {
-                                    if let Some(old_guild) = old_state.guild_id {
-                                        let old_handler = self.guilds.entry_async(old_guild).await.or_insert(Handler{
-                                            guild_id: old_guild,
-                                            ..Default::default()
-                                        });
-                                        let old_handler = &*old_handler;
-                                        match old_state.channel_id {
-                                            Some(_) => {
-                                                old_handler.try_apply_vc_xp(old_state.user_id).await;
-                                            },
-                                            None => {}
-                                        }
-                                    }
-                                }
-                            }
-                        };
-                        tokio::join!(
-                            apply_vc_other_guild,
-                            handler.vc_join_xp(channel, new_state.user_id),
-                            handler.vc_join_channel_temp_channel(ctx, new_state.user_id, channel, old_state),
-                        );
+                        self.vc_join_channel_temp_channel(db.clone(), ctx, guild_id, new_state.user_id, channel, &old_state).await
                     },
                     None => {
-                        tokio::join!(
-                            handler.try_apply_vc_xp(new_state.user_id),
-                            handler.check_delete_channels(ctx, &old_state),
-                        );
-                    },
+                        self.check_delete_channels(db.clone(), ctx, guild_id, &old_state).await
+                    }
                 }
+            };
+            tokio::join!(
+                apply_vc,
+                temp_channel
+            );
         })
     }
 
