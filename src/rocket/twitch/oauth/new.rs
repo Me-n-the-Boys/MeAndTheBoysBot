@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use rocket::http::uri::fmt::ValidRoutePrefix;
 
 const BASE_URI: rocket::http::uri::Absolute<'static> = rocket::uri!("https://id.twitch.tv/oauth2/authorize?");

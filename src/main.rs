@@ -4,16 +4,8 @@ mod rocket;
 mod discord_client;
 
 use ::rocket::{Orbit, Rocket};
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::registry;
 
 static SHUTDOWN: tokio::sync::Notify = tokio::sync::Notify::const_new();
-static RUNTIME: std::sync::LazyLock<tokio::runtime::Runtime> = std::sync::LazyLock::new(||{
-    tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .expect("Could not create tokio runtime")
-});
 
 const FAIL2BAN_TARGET:&str = "fail2ban";
 struct Fail2BanFilter;
@@ -143,7 +135,7 @@ async fn async_main() -> ::anyhow::Result<()>{
     while let Some(task) = js.join_next().await {
         match task.map_or_else(|err|Err(::anyhow::format_err!("{err}")), |res| res) {
             Ok(()) => {},
-            Err(mut err) => {
+            Err(err) => {
                 shutdown_watcher.abort();
                 tracing::error!("Error: {err}");
                 SHUTDOWN.notify_waiters();

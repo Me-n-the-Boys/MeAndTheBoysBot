@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::num::NonZeroU64;
 use poise::serenity_prelude as serenity;
 
@@ -42,17 +41,6 @@ impl super::Handler {
                 tracing::error!("Original Error: {error}");
                 tracing::error!("Error sending error message: {err}");
             }
-        }
-    }
-    async fn is_ignored_channel(&self, db: sqlx::PgPool, channel_id: serenity::ChannelId, guild_id: serenity::GuildId) -> bool {
-        match sqlx::query!(r#"SELECT $2 = ANY(SELECT channel_id FROM temp_channels_ignore WHERE guild_id = $1) as "ignored!""#,
-            crate::converti(guild_id.get()), crate::converti(channel_id.get())).fetch_one(&db).await
-        {
-            Ok(v) => v.ignored,
-            Err(err) => {
-                tracing::error!("Error checking if channel is ignored for temp channels: {err}");
-                true
-            },
         }
     }
     async fn check_delete_channel(&self, db: sqlx::PgPool, ctx: &poise::serenity_prelude::Context, channel: serenity::ChannelId, guild_id: serenity::GuildId) {

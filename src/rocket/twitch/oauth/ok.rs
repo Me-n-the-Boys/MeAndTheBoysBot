@@ -1,5 +1,4 @@
 use std::str::FromStr;
-use std::sync::Arc;
 use super::super::super::csrf;
 
 #[derive(rocket::response::Responder)]

@@ -13,7 +13,7 @@ use tokio::io::AsyncReadExt;
 struct Data;
 struct Handler;
 impl serenity::client::EventHandler for Handler {
-    fn guild_update<'life0, 'async_trait>(&self, ctx: Context, old_data_if_available: Option<Guild>, new_data: PartialGuild)
+    fn guild_update<'life0, 'async_trait>(&self, _: Context, _: Option<Guild>, new_data: PartialGuild)
     -> std::pin::Pin<Box<dyn std::future::Future<Output=()> + Send + 'async_trait>>
     where Self: 'async_trait, 'life0: 'async_trait
     {
@@ -69,7 +69,7 @@ WHEN NOT MATCHED THEN INSERT (guild_id, user_id, vc) VALUES (vc_xp_apply.guild_i
                             }
                         }
                     },
-                    Some(channel_id) => {
+                    Some(_) => {
                         match sqlx::query!(r#"MERGE INTO xp_vc_tmp
 USING (SELECT $1::bigint as guild_id, $2::bigint as user_id) as input ON xp_vc_tmp.guild_id = input.guild_id AND xp_vc_tmp.user_id = input.user_id
 WHEN MATCHED THEN DO NOTHING
@@ -293,7 +293,6 @@ pub async fn migrate() -> ::anyhow::Result<()> {
                     let mut xp = std::collections::HashMap::<_, (Option<u64>, Option<i64>)>::new();
                     let mut xp_txt_tmp = std::collections::HashMap::new();
                     {
-                        let guard = sdd::Guard::new();
                         let mut next_entry = handler.xp_vc.first_entry_async().await;
                         while let Some(entry) = next_entry {
                             let user = *entry.key();
@@ -301,7 +300,6 @@ pub async fn migrate() -> ::anyhow::Result<()> {
                             xp.entry(user).or_default().0 = Some(vc_xp);
                             next_entry = entry.next_async().await;
                         }
-                        let guard = sdd::Guard::new();
                         let mut next_entry = handler.xp_txt.first_entry_async().await;
                         while let Some(entry) = next_entry {
                             let user = *entry.key();
