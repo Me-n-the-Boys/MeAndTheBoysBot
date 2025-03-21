@@ -55,11 +55,11 @@ impl super::Handler {
         }
     }
     async fn is_channel_empty(&self, db: sqlx::PgPool, guild_id: serenity::GuildId, channel_id: serenity::ChannelId) -> bool {
-        match sqlx::query!(r#"SELECT Count(*) as "count!" FROM temp_channels_created WHERE guild_id = $1 AND channel_id = $2"#, crate::converti(guild_id.get()), crate::converti(channel.get())).fetch_one(&db).await {
+        match sqlx::query!(r#"SELECT Count(*) as "count!" FROM temp_channels_created WHERE guild_id = $1 AND channel_id = $2"#, crate::converti(guild_id.get()), crate::converti(channel_id.get())).fetch_one(&db).await {
             Ok(v) => match v.count {
                 0 => true,
                 _ => {
-                    tracing::info!("Channel {channel} is not empty.");
+                    tracing::info!("Channel {channel_id} is not empty.");
                     false
                 },
             },
