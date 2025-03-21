@@ -18,7 +18,7 @@ impl rocket::fairing::Fairing for TwitchRocketCallback {
             &self.conduit.id,
             vec![
                 twitch_api::eventsub::Shard::new(
-                    0,
+                    twitch_api::types::ConduitShardId::new("test".to_string()),
                     twitch_api::eventsub::Transport::webhook(
                         const_format::concatcp!(crate::rocket::BASE_SCHEME, "://", crate::rocket::BASE_URL, "/twitch/eventsub"),
                         super::TWITCH_WS_SECRET_STRING.clone(),

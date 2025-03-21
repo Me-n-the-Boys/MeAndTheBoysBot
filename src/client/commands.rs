@@ -1,4 +1,3 @@
-mod debug;
 mod settings;
 
 use poise::CreateReply;
@@ -24,7 +23,6 @@ pub async fn ping(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-pub use debug::debug;
 pub use settings::settings;
 
 

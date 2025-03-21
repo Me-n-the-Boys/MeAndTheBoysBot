@@ -128,7 +128,7 @@ impl TwitchAuthentication {
         }
         match self.refresh_token.take() {
             Some(v) => {
-                match v.refresh_token(&twitch.client, &twitch.client_id, &twitch.client_secret).await {
+                match v.refresh_token(&twitch.client, &twitch.client_id, Some(&twitch.client_secret)).await {
                     Ok((access_token, expiry, refresh_token)) => {
                         self.access_token = access_token;
                         self.expiry = TwitchAuthenticationTime::new_expiry(expiry);

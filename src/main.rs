@@ -79,7 +79,7 @@ fn main() -> ::anyhow::Result<()>{
         log::info!("Initialized logging");
     }
 
-    RUNTIME.block_on(async_main())
+    async_main()
 }
 
 #[tokio::main]
@@ -183,4 +183,17 @@ impl ::rocket::fairing::Fairing for Shutdown {
             shutdown.notify();
         });
     }
+}
+
+//TODO: Use .cast_signed and .cast_unsigned when they are stable?
+// https://github.com/rust-lang/rust/issues/125882
+fn converti(num: u64) -> i64 {
+    // num.cast_signed()
+    i64::from_ne_bytes(num.to_ne_bytes())
+}
+//TODO: Use .cast_signed and .cast_unsigned when they are stable?
+// https://github.com/rust-lang/rust/issues/125882
+fn convertu(num: i64) -> u64 {
+    // num.cast_unsigned()
+    u64::from_ne_bytes(num.to_ne_bytes())
 }
