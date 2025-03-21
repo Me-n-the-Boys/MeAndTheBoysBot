@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\nMERGE INTO temp_channels_created USING\n    ( SELECT\n          $1::bigint as guild_id,\n          $2::bigint as channel_id\n    ) AS input ON temp_channels_created.guild_id = input.guild_id AND temp_channels_created.channel_id = input.channel_id\nWHEN MATCHED AND mark_delete IS NULL THEN UPDATE SET mark_delete = now()\nWHEN NOT MATCHED THEN DO NOTHING\nRETURNING mark_delete = now() as \"mark_delete!\", now() as \"deleted_at!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "mark_delete!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "deleted_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "91090fca34aa4d1f3f2cbb63cb1b98e8dba0f5f60dd984d149c26123f1ff02d8"
+}

@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\nSELECT\n  guild_id,\n  $2 = ANY(SELECT channel_id FROM temp_channels_ignore WHERE temp_channels_ignore.guild_id = temp_channels.guild_id) as \"ignored!\",\n  creator_channel,\n  create_category,\n  delete_delay\nfrom temp_channels\nWHERE guild_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "guild_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "ignored!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "creator_channel",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "create_category",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "delete_delay",
+        "type_info": "Interval"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "f31d20f523cb27ffb9ecf3625915ac7443f31f17294089f9c8a1c3353b667474"
+}
