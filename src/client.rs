@@ -39,7 +39,7 @@ WHEN NOT MATCHED THEN INSERT (guild_id) VALUES (guilds.guild_id)
             }
         })
     }
-    fn voice_state_update<'life0, 'async_trait>(&'life0 self, ctx: poise::serenity_prelude::Context, old_state: std::option::Option<serenity::all::VoiceState>, new_state: serenity::all::VoiceState)
+    fn voice_state_update<'life0, 'async_trait>(&'life0 self, ctx: poise::serenity_prelude::Context, _: Option<serenity::all::VoiceState>, new_state: serenity::all::VoiceState)
     -> std::pin::Pin<Box<dyn std::future::Future<Output=()> + Send + 'async_trait>>
     where Self: 'async_trait, 'life0: 'async_trait
     {
@@ -86,10 +86,10 @@ WHEN NOT MATCHED THEN INSERT (guild_id, user_id, time) VALUES (input.guild_id, i
             let temp_channel = async {
                 match new_state.channel_id {
                     Some(channel) => {
-                        self.vc_join_channel_temp_channel(db.clone(), ctx, guild_id, new_state.user_id, channel, &old_state).await
+                        self.vc_join_channel_temp_channel(db.clone(), ctx, guild_id, new_state.user_id, channel).await
                     },
                     None => {
-                        self.check_delete_channels(db.clone(), ctx, guild_id, &old_state).await
+                        self.check_delete_channels(db.clone(), ctx, new_state.user_id, guild_id).await
                     }
                 }
             };
