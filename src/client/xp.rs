@@ -65,7 +65,7 @@ impl super::Handler {
         match sqlx::query!(r#"SELECT $1 = ANY(SELECT channel_id FROM xp_channels_ignored WHERE guild_id = $2) as "ignored!""#, crate::converti(channel_id.get()), crate::converti(guild_id.get())).fetch_one(&db).await {
             Ok(v) => v.ignored,
             Err(err) => {
-                tracing::error!("Error checking if channel is ignored: {err}");
+                tracing::error!("Error checking if channel is ignored for xp: {err}");
                 true
             },
         }

@@ -45,7 +45,44 @@ WHEN NOT MATCHED THEN INSERT (guild_id) VALUES (guilds.guild_id)
     {
         Box::pin(async move {
             let db = crate::get_db().await;
-
+            let apply_vc = async {if let Some(guild) = new_state.guild_id {
+                match new_state.channel_id {
+                    None => {
+                        match sqlx::query!("WITH vc_xp_apply AS (
+    DELETE FROM xp_vc_tmp WHERE guild_id = $1 AND user_id = $2 RETURNING *
+) MERGE INTO xp_user USING vc_xp_apply ON xp_user.guild_id = vc_xp_apply.guild_id AND xp_user.user_id = vc_xp_apply.user_id
+WHEN MATCHED THEN UPDATE SET vc = xp_user.vc + (now() - vc_xp_apply.time)
+WHEN NOT MATCHED THEN INSERT (guild_id, user_id, vc) VALUES (vc_xp_apply.guild_id, vc_xp_apply.user_id, (now() - vc_xp_apply.time))
+").execute(&db).await {
+                            Ok(v) => match v.rows_affected(){
+                                0 => {
+                                    tracing::error!("Error applying voice xp: No rows affected");
+                                },
+                                _ => {},
+                            },
+                            Err(err) => {
+                                tracing::error!("Error applying voice xp: {err}");
+                            }
+                        }
+                    },
+                    Some(channel_id) => {
+                        match sqlx::query!(r#"MERGE INTO xp_vc_tmp
+USING (SELECT $1::bigint as guild_id, $2::bigint as user_id) as input ON xp_vc_tmp.guild_id = input.guild_id AND xp_vc_tmp.user_id = input.user_id
+WHEN MATCHED THEN DO NOTHING
+WHEN NOT MATCHED THEN INSERT (guild_id, user_id, time) VALUES (input.guild_id, input.user_id, now())
+"#, crate::converti(guild.get()), crate::converti(new_state.user_id.get())).execute(&db).await {
+                            Ok(_) => {},
+                            Err(err) => {
+                                tracing::error!("Error adding user to voice xp tmp: {err}");
+                            }
+                        }
+                    }
+                }
+            }};
+            tokio::join!(
+                apply_vc
+                self.vc_join_channel_temp_channel(ctx, new_state.user_id, channel, old_state),
+            );
 
                 let handler = self.guilds.entry_async(guild).await.or_insert(Handler{
                     guild_id: guild,
@@ -347,20 +384,6 @@ pub async fn init_client(auth: Arc<crate::rocket::auth::Auth>) -> ::anyhow::Resu
         .await?;
 
     let shard_manager = client.shard_manager.clone();
-
-    let (sender, saver) = {
-        let (sender, mut receiver) = tokio::sync::oneshot::channel::<()>();
-        (sender, tokio::spawn(async move{
-            let cache = cache;
-            loop {
-                tokio::select!(
-                    biased;
-                    _ = &mut receiver => return cache,
-                    _ = interval.tick() => cache.save().await,
-                )
-            }
-        }))
-    };
 
     {
         tokio::spawn(async move {
