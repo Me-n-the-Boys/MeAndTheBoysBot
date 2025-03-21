@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\nMERGE INTO temp_channels USING (SELECT $1::bigint, $2::bigint, $4::bigint) as input(guild_id, channel_id, category) ON temp_channels.guild_id = input.guild_id\nWHEN MATCHED THEN UPDATE SET creator_channel = input.channel_id, create_category = CASE WHEN $3::bool THEN input.category ELSE temp_channels.create_category END\nWHEN NOT MATCHED THEN INSERT (guild_id, creator_channel, create_category) VALUES (input.guild_id, input.channel_id, input.category)\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bool",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3bd88716d125f1bcc0ad2b03cc18937f3199e245c494a7731679a9ee429229cf"
+}

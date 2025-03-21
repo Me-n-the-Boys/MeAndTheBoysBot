@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT $2 = ANY(SELECT creator_channel FROM temp_channels WHERE guild_id = $1) as \"is_creator_channel!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "is_creator_channel!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "42667cd0089097c0f6f484036469e58d49140dfef482e761a9a95d77356bc8d4"
+}

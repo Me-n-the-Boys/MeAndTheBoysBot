@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "MERGE INTO xp_vc_tmp\nUSING (SELECT $1::bigint as guild_id, $2::bigint as user_id) as input ON xp_vc_tmp.guild_id = input.guild_id AND xp_vc_tmp.user_id = input.user_id\nWHEN MATCHED THEN DO NOTHING\nWHEN NOT MATCHED THEN INSERT (guild_id, user_id, time) VALUES (input.guild_id, input.user_id, now())\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a71179df08f5b1e1387c2cc50a28279de9f5888cf01381ae9ce75a85831bde86"
+}

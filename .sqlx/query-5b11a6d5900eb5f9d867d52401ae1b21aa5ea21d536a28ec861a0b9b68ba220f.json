@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n(SELECT Count(*) FROM temp_channels_created WHERE guild_id = $1) + (SELECT COUNT(*) FROM temp_channels_ignore WHERE guild_id = $1) as \"count!\",\ncreate_category\nFROM temp_channels\nWHERE guild_id = $1\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "create_category",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      true
+    ]
+  },
+  "hash": "5b11a6d5900eb5f9d867d52401ae1b21aa5ea21d536a28ec861a0b9b68ba220f"
+}

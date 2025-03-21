@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT $2 = ANY(SELECT channel_id FROM temp_channels_ignore WHERE guild_id = $1) as \"ignored!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ignored!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "cbaa03a5875a1dbde1b9d149d61329e8df36b243518008ccfaf0c1ab85b181fd"
+}

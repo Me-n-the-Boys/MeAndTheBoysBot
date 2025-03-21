@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH vc_xp_apply AS (\n    DELETE FROM xp_vc_tmp WHERE guild_id = $1 AND user_id = $2 RETURNING *\n) MERGE INTO xp_user USING vc_xp_apply ON xp_user.guild_id = vc_xp_apply.guild_id AND xp_user.user_id = vc_xp_apply.user_id\nWHEN MATCHED THEN UPDATE SET vc = xp_user.vc + (now() - vc_xp_apply.time)\nWHEN NOT MATCHED THEN INSERT (guild_id, user_id, vc) VALUES (vc_xp_apply.guild_id, vc_xp_apply.user_id, (now() - vc_xp_apply.time))\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cbcdf1d5e95792daa589743d04732bedbaac729a58c968e55e542c707e1c7938"
+}

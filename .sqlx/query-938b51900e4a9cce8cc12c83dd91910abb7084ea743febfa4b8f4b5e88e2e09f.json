@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE temp_channels SET delete_delay = $2 WHERE guild_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Interval"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "938b51900e4a9cce8cc12c83dd91910abb7084ea743febfa4b8f4b5e88e2e09f"
+}

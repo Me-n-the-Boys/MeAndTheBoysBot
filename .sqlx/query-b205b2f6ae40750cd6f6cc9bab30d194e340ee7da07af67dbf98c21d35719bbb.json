@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE temp_channels SET delete_non_created_channels = $2 WHERE guild_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b205b2f6ae40750cd6f6cc9bab30d194e340ee7da07af67dbf98c21d35719bbb"
+}

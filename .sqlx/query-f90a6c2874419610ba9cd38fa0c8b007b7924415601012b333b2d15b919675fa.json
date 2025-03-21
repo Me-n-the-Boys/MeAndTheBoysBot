@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT guild_id as \"guild_id!\", user_id as \"user_id!\", total_xp as \"total_xp!\", applyable_xp as \"applyable_xp!\", xp_punish as \"xp_punish!\", duration as \"duration!\" FROM apply_previous_message_xp($1, $2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "guild_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "total_xp!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "applyable_xp!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "xp_punish!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "duration!",
+        "type_info": "Interval"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "f90a6c2874419610ba9cd38fa0c8b007b7924415601012b333b2d15b919675fa"
+}

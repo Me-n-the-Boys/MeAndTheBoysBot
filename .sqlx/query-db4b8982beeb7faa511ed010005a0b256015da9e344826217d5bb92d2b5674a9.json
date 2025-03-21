@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO xp (guild_id, txt_apply_interval, txt_punish_interval) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Interval",
+        "Interval"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "db4b8982beeb7faa511ed010005a0b256015da9e344826217d5bb92d2b5674a9"
+}

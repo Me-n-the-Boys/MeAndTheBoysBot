@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH vc_xp_apply AS (\nUPDATE xp_user SET vc = xp_user.vc + (now() - xp_vc_tmp.time) FROM xp_vc_tmp WHERE xp_user.guild_id = xp_vc_tmp.guild_id AND xp_user.user_id = xp_vc_tmp.user_id RETURNING xp_user.guild_id, xp_user.user_id\n) UPDATE xp_vc_tmp SET time = now() FROM vc_xp_apply WHERE xp_vc_tmp.guild_id = vc_xp_apply.guild_id AND xp_vc_tmp.user_id = vc_xp_apply.user_id\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "93fc7a438fa942c061cd2e480c22242eff21c8695f7a9878b17c80ba856c27c2"
+}

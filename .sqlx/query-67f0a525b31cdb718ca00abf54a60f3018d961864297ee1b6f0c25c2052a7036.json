@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE temp_channels_created SET mark_delete = NULL WHERE channel_id = $1 AND guild_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "67f0a525b31cdb718ca00abf54a60f3018d961864297ee1b6f0c25c2052a7036"
+}
