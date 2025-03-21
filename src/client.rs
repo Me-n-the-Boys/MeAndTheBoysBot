@@ -244,21 +244,21 @@ pub async fn migrate() -> ::anyhow::Result<()> {
                         let creator_channel = crate::converti(creator_channel);
                         let create_category = handler.create_category.load(std::sync::atomic::Ordering::Acquire);
                         let create_category = if create_category != 0 { Some(crate::converti(create_category)) } else { None };
-                        let delete_non_created_channels = handler.creator_delete_non_created_channels.load(std::sync::atomic::Ordering::Acquire);
 
                         let delete_delay = {
                             let delete_delay = std::time::Duration::from_nanos(handler.creator_delete_delay_nanoseconds.load(std::sync::atomic::Ordering::Acquire));
                             const SECS_PER_DAY: u32 = 24*60*60;
                             let delete_days = delete_delay.as_secs() / 24 / 60 / 60;
+                            let delete_days = (delete_days % 30) + delete_delay.as_secs()/u64::from(SECS_PER_DAY);
                             //This assumes 30 days per month, which is not correct, but good enough for this purpose.
                             sqlx::postgres::types::PgInterval{
                                 months: (delete_days / 30) as i32,
-                                days: (delete_days % 30) as i32,
-                                microseconds: i64::from(delete_delay.subsec_micros()) + (delete_delay.as_secs()%u64::from(SECS_PER_DAY)) as i64,
+                                days: (delete_days%30) as i32,
+                                microseconds: i64::from(delete_delay.subsec_micros()) + ((delete_delay.as_secs()%u64::from(SECS_PER_DAY))*1_000*1_000) as i64,
                             }
                         };
-                        sqlx::query!("INSERT INTO temp_channels (guild_id, creator_channel, create_category, delete_non_created_channels, delete_delay) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
-                    guild, creator_channel, create_category, delete_non_created_channels, delete_delay).execute(&mut *transaction).await?;
+                        sqlx::query!("INSERT INTO temp_channels (guild_id, creator_channel, create_category, delete_delay) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+                    guild, creator_channel, create_category, delete_delay).execute(&mut *transaction).await?;
                     }
                     for (channel, ()) in handler.created_channels.iter(&sdd::Guard::new()).map(|(channel, _)|(*channel, ())).collect::<Vec<_>>().into_iter() {
                         let channel = crate::converti(channel.get());

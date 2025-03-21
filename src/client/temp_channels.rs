@@ -44,22 +44,38 @@ impl super::Handler {
         }
     }
     async fn check_delete_channel(&self, db: sqlx::PgPool, ctx: &poise::serenity_prelude::Context, channel: serenity::ChannelId, guild_id: serenity::GuildId) {
-        let out = match sqlx::query!(r#"
+        let mark_delete = match sqlx::query!(r#"
 MERGE INTO temp_channels_created USING
     ( SELECT
-          guild_id,
-          $2::bigint as channel_id,
-          $2 = ANY(SELECT channel_id FROM temp_channels_ignore WHERE guild_id = $1) as "ignored!",
-          delete_non_created_channels,
-          creator_channel,
-          create_category,
-          delete_delay
-        from temp_channels
-        WHERE guild_id = $1
+          $1::bigint as guild_id,
+          $2::bigint as channel_id
     ) AS input ON temp_channels_created.guild_id = input.guild_id AND temp_channels_created.channel_id = input.channel_id
 WHEN MATCHED AND mark_delete IS NULL THEN UPDATE SET mark_delete = now()
 WHEN NOT MATCHED THEN DO NOTHING
-RETURNING input.*, temp_channels_created.channel_id as "created_channel_id?", mark_delete = now() as "mark_delete?", now() as "deleted_at!"
+RETURNING mark_delete = now() as "mark_delete!", now() as "deleted_at!"
+        "#,
+            crate::converti(guild_id.get()), crate::converti(channel.get())).fetch_optional(&db).await
+        {
+            Ok(None) => {
+                tracing::error!("We did not create channel: <#{channel}>");
+                return;
+            },
+            Ok(Some(v)) => v,
+            Err(err) => {
+                tracing::error!("Error checking if channel might need deletion: {err}");
+                return;
+            },
+        };
+
+        let info = match sqlx::query!(r#"
+SELECT
+  guild_id,
+  $2 = ANY(SELECT channel_id FROM temp_channels_ignore WHERE temp_channels_ignore.guild_id = temp_channels.guild_id) as "ignored!",
+  creator_channel,
+  create_category,
+  delete_delay
+from temp_channels
+WHERE guild_id = $1
         "#,
             crate::converti(guild_id.get()), crate::converti(channel.get())).fetch_one(&db).await
         {
@@ -69,29 +85,26 @@ RETURNING input.*, temp_channels_created.channel_id as "created_channel_id?", ma
                 return;
             },
         };
-        if out.ignored {
+        if info.ignored {
             return;
         }
-        if !out.delete_non_created_channels && out.created_channel_id.is_none() {
-            return;
-        }
-        if !out.mark_delete.unwrap_or(false) {
+        if !mark_delete.mark_delete {
             tracing::warn!("Channel {channel} was already deleted?");
             //Channel was already deleted?
             return;
         }
 
-        let creator_channel = serenity::ChannelId::new(crate::convertu(out.creator_channel));
+        let creator_channel = serenity::ChannelId::new(crate::convertu(info.creator_channel));
         let instant = {
             const DAYS_PER_MONTH:i64 = 30;
             const SECONDS_PER_DAY:i64 = 24*60*60;
-            let month_days = i64::saturating_mul(out.delete_delay.months as i64, DAYS_PER_MONTH);
-            let day_seconds = i64::saturating_add(i64::saturating_mul(out.delete_delay.days.unsigned_abs() as i64, SECONDS_PER_DAY), month_days);
-            let microseconds = out.delete_delay.microseconds;
+            let month_days = i64::saturating_mul(info.delete_delay.months as i64, DAYS_PER_MONTH);
+            let day_seconds = i64::saturating_add(i64::saturating_mul(info.delete_delay.days.unsigned_abs() as i64, SECONDS_PER_DAY), month_days);
+            let microseconds = info.delete_delay.microseconds;
             let seconds = i64::saturating_add(microseconds/1_000/1_000, day_seconds);
             let subsec_microseconds = microseconds%(1_000*1_000);
             if seconds < 0  || (seconds == 0 && subsec_microseconds < 0) {
-                tracing::error!("Negative deletion delay time for guild {guild_id}. Delay: {:?}. Refusing to delete channel", out.delete_delay);
+                tracing::error!("Negative deletion delay time for guild {guild_id}. Delay: {:?}. Refusing to delete channel", info.delete_delay);
                 self.log_error(&ctx, creator_channel, format!("Negative channel deletion delay time set?")).await;
                 return;
             }
@@ -105,13 +118,13 @@ RETURNING input.*, temp_channels_created.channel_id as "created_channel_id?", ma
             tracing::info!("Sleeping for channel {channel} for deletion");
             tokio::time::sleep_until(tokio::time::Instant::from(instant)).await;
         }else {
-            tracing::error!("Error calculating deletion delay time for guild {guild_id}. Delay: {:?}. Refusing to delete channels.", out.delete_delay);
-            self.log_error(&ctx, creator_channel, format!("Error calculating deletion delay time. Delay: {:?}. Refusing to delete channels.", out.delete_delay)).await;
+            tracing::error!("Error calculating deletion delay time for guild {guild_id}. Delay: {:?}. Refusing to delete channels.", info.delete_delay);
+            self.log_error(&ctx, creator_channel, format!("Error calculating deletion delay time. Delay: {:?}. Refusing to delete channels.", info.delete_delay)).await;
             return;
         }
 
         match sqlx::query!(r#"DELETE FROM temp_channels_created WHERE guild_id = $2 AND channel_id = $3 AND mark_delete IS NOT NULL AND mark_delete = $1::timestamptz RETURNING *"#,
-            out.deleted_at, crate::converti(guild_id.get()), crate::converti(channel.get())).fetch_optional(&db).await
+            mark_delete.deleted_at, crate::converti(guild_id.get()), crate::converti(channel.get())).fetch_optional(&db).await
         {
             Err(v) => {
                 tracing::error!("Error checking if channel should be deleted: {v}");
@@ -131,7 +144,7 @@ RETURNING input.*, temp_channels_created.channel_id as "created_channel_id?", ma
                 let id = v.id();
                 let name = v.guild().map(|v| v.name).unwrap_or_else(|| "Unknown".to_string());
                 tracing::info!("Deleted Channel {channel} (id: {id}) (name: {name}).");
-                self.log_error(&ctx, creator_channel, format!("Deleted Channel {channel} (id: {id}) (name: {name}).")).await;
+                self.log_error(&ctx, creator_channel, format!("Deleted Channel <#{channel}> (id: {id}) (name: {name}).")).await;
             },
             Err(err) => {
                 self.log_error(&ctx, channel, format!("There was an error deleting the Channel: {err}")).await;
