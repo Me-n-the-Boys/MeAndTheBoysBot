@@ -1,5 +1,6 @@
 use std::num::NonZeroU64;
 use poise::serenity_prelude as serenity;
+use serenity::http::CacheHttp;
 
 impl super::Handler {
     pub(crate) async fn vc_join_channel_temp_channel(&self, ctx: serenity::Context, guild_id: serenity::GuildId, user_id: serenity::UserId, channel_id: serenity::ChannelId) {
@@ -47,7 +48,7 @@ WHEN NOT MATCHED THEN DO NOTHING
                             tracing::error!("Error updating temp_channels_created_users: {err}");
                         }
                     }
-                    self.check_delete_channels(ctx, user_id, guild_id).await
+                    self.check_delete_channels(ctx).await
                 },
             }
             Err(err) => {
@@ -56,7 +57,7 @@ WHEN NOT MATCHED THEN DO NOTHING
         }
     }
 
-    async fn log_error(&self, ctx: &poise::serenity_prelude::Context, channel: serenity::ChannelId, error: String) {
+    async fn log_error(&self, ctx: impl CacheHttp, channel: serenity::ChannelId, error: String) {
         let send_message = serenity::CreateMessage::new()
             .content(error.clone())
             .allowed_mentions(serenity::CreateAllowedMentions::new().empty_roles().empty_users());
@@ -89,7 +90,7 @@ WHEN NOT MATCHED THEN DO NOTHING
         }
     }
 
-    async fn check_delete_channel(&self, ctx: &poise::serenity_prelude::Context, channel: serenity::ChannelId, guild_id: serenity::GuildId) {
+    async fn check_delete_channel(&self, ctx: impl CacheHttp, channel: serenity::ChannelId, guild_id: serenity::GuildId) {
         if !self.is_channel_empty(guild_id, channel).await {
             return;
         }
@@ -192,7 +193,7 @@ WHERE guild_id = $1
             Ok(Some(_)) => {},
         }
 
-        match channel.delete(&ctx).await {
+        match channel.delete(ctx.http()).await {
             Ok(v) => {
                 let id = v.id();
                 let name = v.guild().map(|v| v.name).unwrap_or_else(|| "Unknown".to_string());
@@ -206,8 +207,8 @@ WHERE guild_id = $1
             }
         }
     }
-    pub(crate) async fn check_delete_channels(&self, ctx: poise::serenity_prelude::Context, user_id: serenity::UserId, guild_id: serenity::GuildId) {
-        let channels = match sqlx::query!(r#"SELECT channel_id FROM temp_channels_created WHERE (
+    pub(crate) async fn check_delete_channels(&self, ctx: impl CacheHttp) {
+        let channels = match sqlx::query!(r#"SELECT guild_id, channel_id FROM temp_channels_created WHERE (
 SELECT COUNT(*) FROM temp_channels_created_users WHERE temp_channels_created_users.guild_id = temp_channels_created.guild_id AND temp_channels_created_users.channel_id = temp_channels_created.channel_id
 ) = 0"#).fetch_all(&self.pool).await {
             Ok(v) => v,
@@ -218,7 +219,7 @@ SELECT COUNT(*) FROM temp_channels_created_users WHERE temp_channels_created_use
         };
 
         for channel in channels {
-            self.check_delete_channel(&ctx, serenity::ChannelId::new(crate::convertu(channel.channel_id)), guild_id).await;
+            self.check_delete_channel(&ctx, serenity::ChannelId::new(crate::convertu(channel.channel_id)), serenity::GuildId::new(crate::convertu(channel.guild_id))).await;
         }
     }
     async fn create_channel(&self, ctx: &poise::serenity_prelude::Context, user_id: serenity::UserId, guild_id: serenity::GuildId) {

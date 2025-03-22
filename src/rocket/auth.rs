@@ -40,7 +40,7 @@ impl Auth {
             twitch,
             discord: discord::Discord::new().await?,
         });
-        let discord = crate::client::init_client(slf.clone()).await?;
+        let discord = crate::client::init_client().await?;
         let rocket = rocket.manage(slf.clone());
         let refresh = refresh_tokens(slf.clone());
         Ok((rocket, slf, discord, refresh))

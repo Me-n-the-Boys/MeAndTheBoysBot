@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 #[derive(Clone)]
-pub(super) struct DiscordClient {
+pub(crate) struct DiscordClient {
     cache: Arc<serenity::cache::Cache>,
     http: Arc<serenity::http::Http>,
 }

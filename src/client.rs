@@ -136,7 +136,7 @@ crate::converti(guild_id.get()), crate::converti(new_state.user_id.get())
                                     return;
                                 }
                             };
-                            self.check_delete_channels(ctx, new_state.user_id, guild_id).await
+                            self.check_delete_channels(ctx).await
                         }
                     }
                 };
@@ -432,7 +432,7 @@ pub async fn migrate() -> ::anyhow::Result<()> {
     }
     Ok(())
 }
-pub async fn init_client(auth: Arc<crate::rocket::auth::Auth>) -> ::anyhow::Result<serenity::Client> {
+pub async fn init_client() -> ::anyhow::Result<serenity::Client> {
     tracing::info!("Client Startup");
     migrate().await.expect("Failed to migrate");
 
@@ -467,6 +467,7 @@ pub async fn init_client(auth: Arc<crate::rocket::auth::Auth>) -> ::anyhow::Resu
         .await?;
 
     let shard_manager = client.shard_manager.clone();
+    let cache = crate::discord_client::DiscordClient::new(&client);
 
     {
         tokio::spawn(async move {
@@ -498,6 +499,7 @@ UPDATE xp_user SET vc = xp_user.vc + (now() - xp_vc_tmp.time) FROM xp_vc_tmp WHE
                             }
                         }
                         handler.apply_previous_message_xp(None, None).await;
+                        handler.check_delete_channels(&cache).await
                     },
                 }
             }
