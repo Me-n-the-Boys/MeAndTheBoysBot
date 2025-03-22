@@ -191,14 +191,6 @@ WHERE guild_id = $1
         }
     }
     pub(crate) async fn check_delete_channels(&self, ctx: poise::serenity_prelude::Context, user_id: serenity::UserId, guild_id: serenity::GuildId) {
-        match sqlx::query!(r#"DELETE FROM temp_channels_created_users WHERE guild_id = $1 AND user_id = $2"#, crate::converti(guild_id.get()), crate::converti(user_id.get())).execute(&self.pool).await {
-            Ok(_) => {},
-            Err(err) => {
-                tracing::error!("Error getting created channels: {err}");
-                return;
-            }
-        };
-
         let channels = match sqlx::query!(r#"SELECT channel_id FROM temp_channels_created WHERE (
 SELECT COUNT(*) FROM temp_channels_created_users WHERE temp_channels_created_users.guild_id = temp_channels_created.guild_id AND temp_channels_created_users.channel_id = temp_channels_created.channel_id
 ) = 0"#).fetch_all(&self.pool).await {

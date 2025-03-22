@@ -121,9 +121,18 @@ WHEN NOT MATCHED THEN INSERT (guild_id, user_id, time) VALUES (input.guild_id, i
                 let temp_channel = async {
                     match new_state.channel_id {
                         Some(channel) => {
+                            tracing::debug!("User {} is joining channel {channel}", new_state.user_id);
                             self.vc_join_channel_temp_channel(ctx, guild_id, new_state.user_id, channel).await
                         },
                         None => {
+                            tracing::debug!("User {} left a channel", new_state.user_id);
+                            match sqlx::query!(r#"DELETE FROM temp_channels_created_users WHERE guild_id = $1 AND user_id = $2"#, crate::converti(guild_id.get()), crate::converti(user_id.get())).execute(&self.pool).await {
+                                Ok(_) => {},
+                                Err(err) => {
+                                    tracing::error!("Error getting created channels: {err}");
+                                    return;
+                                }
+                            };
                             self.check_delete_channels(ctx, new_state.user_id, guild_id).await
                         }
                     }
