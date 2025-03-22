@@ -20,7 +20,23 @@ impl super::Handler {
                             tracing::error!("Error updating temp_channels_created: {err}");
                         }
                     }
-                    match sqlx::query!("INSERT INTO temp_channels_created_users (guild_id, channel_id, user_id) VALUES ($2, $1, $3)", crate::converti(channel_id.get()), crate::converti(guild_id.get()), crate::converti(user_id.get())).execute(&self.pool).await {
+                    match sqlx::query!("
+WITH input AS (SELECT $2::bigint as guild_id, $1::bigint as channel_id, $3::bigint as user_id)
+
+MERGE INTO temp_channels_created_users USING
+    (SELECT input.*,
+        input.channel_id = ANY(SELECT channel_id FROM temp_channels_created WHERE temp_channels_created.guild_id = input.guild_id) as is_created_channel,
+        input.channel_id = ANY(SELECT channel_id FROM temp_channels_ignore WHERE temp_channels_ignore.guild_id = input.guild_id) as is_ignored_channel
+     FROM input
+    ) AS input
+    ON temp_channels_created_users.guild_id = input.guild_id AND temp_channels_created_users.user_id = input.user_id
+WHEN MATCHED AND input.is_ignored_channel THEN DELETE
+WHEN MATCHED AND input.is_created_channel THEN UPDATE SET channel_id = input.channel_id
+WHEN MATCHED THEN DELETE
+WHEN NOT MATCHED AND input.is_ignored_channel THEN DO NOTHING
+WHEN NOT MATCHED AND input.is_created_channel THEN INSERT (guild_id, channel_id, user_id) VALUES (input.guild_id, input.channel_id, input.user_id)
+WHEN NOT MATCHED THEN DO NOTHING
+", crate::converti(channel_id.get()), crate::converti(guild_id.get()), crate::converti(user_id.get())).execute(&self.pool).await {
                         Ok(v) => match v.rows_affected() {
                             0 => {
                                 tracing::info!("Channel {channel_id} isn't a created channel?");
