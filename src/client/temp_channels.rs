@@ -107,7 +107,7 @@ RETURNING mark_delete = now() as "mark_delete!", now() as "deleted_at!"
             crate::converti(guild_id.get()), crate::converti(channel.get())).fetch_optional(&self.pool).await
         {
             Ok(None) => {
-                tracing::error!("We did not create channel: <#{channel}>");
+                tracing::info!("We did not create or have permission to delete channel: <#{channel}>");
                 return;
             },
             Ok(Some(v)) => v,
