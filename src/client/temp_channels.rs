@@ -272,7 +272,7 @@ WHERE guild_id = $1
                 if let Some(error) = error {
                     self.log_error(&ctx, v.id, format!("There was an error getting the Creator's User: {error}")).await;
                 }
-                //Channel should be inserted automatically by the event handler.
+               self.channel_create(&v, true).await;
                 tracing::info!("Created channel {v}");
                 match guild_id.move_member(&ctx, user_id, v.id).await {
                     Ok(_) => {},

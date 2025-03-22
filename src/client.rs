@@ -6,7 +6,7 @@ use poise::serenity_prelude as serenity;
 use serenity::utils::validate_token;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
-use serenity::all::{Context, Event, GatewayIntents, Guild, PartialGuild};
+use serenity::all::{Context, Event, GatewayIntents};
 use tokio::io::AsyncReadExt;
 
 /// User data, which is stored and accessible in all command invocations
@@ -24,19 +24,7 @@ impl serenity::client::RawEventHandler for Handler {
             Event::UserUpdate(_) => {}
 
             Event::ChannelCreate(channel) => {
-                let channel_name = channel.channel.name;
-                let channel_id = crate::converti(channel.channel.id.get());
-                let category_id = channel.channel.parent_id.map(serenity::ChannelId::get).map(crate::converti);
-                let guild_id = crate::converti(channel.channel.guild_id.get());
-                match sqlx::query!(
-r#"INSERT INTO temp_channels_created SELECT guild_id, $2::bigint as channel_id, NULL as mark_delete, $4::text as name FROM temp_channels
-WHERE guild_id = $1 AND temp_channels.create_category = $3"#, guild_id, channel_id, category_id, channel_name).execute(&self.pool).await
-                {
-                    Ok(_) => {},
-                    Err(err) => {
-                        tracing::error!("Error creating temp channel: {err}");
-                    }
-                }
+                self.channel_create(&channel.channel, false).await;
             }
             Event::ChannelUpdate(channel) => {
                 let channel_name = channel.channel.name;
@@ -227,6 +215,22 @@ impl Handler{
             }
         }
     }
+    async fn channel_create(&self, channel: &serenity::GuildChannel, self_created: bool) {
+        let channel_name = &channel.name;
+        let channel_id = crate::converti(channel.id.get());
+        let category_id = channel.parent_id.map(serenity::ChannelId::get).map(crate::converti);
+        let guild_id = crate::converti(channel.guild_id.get());
+        match sqlx::query!(
+r#"INSERT INTO temp_channels_created SELECT guild_id, $2::bigint as channel_id, NULL as mark_delete, $4::text as name FROM temp_channels
+WHERE temp_channels.guild_id = $1 AND temp_channels.create_category = $3 AND ($5::boolean OR temp_channels.delete_non_created_channels)"#,
+            guild_id, channel_id, category_id, channel_name, self_created).execute(&self.pool).await
+        {
+            Ok(_) => {},
+            Err(err) => {
+                tracing::error!("Error creating temp channel: {err}");
+            }
+        }
+    }
 }
 
 pub async fn migrate() -> ::anyhow::Result<()> {
@@ -353,21 +357,21 @@ pub async fn migrate() -> ::anyhow::Result<()> {
                         let creator_channel = crate::converti(creator_channel);
                         let create_category = handler.create_category.load(std::sync::atomic::Ordering::Acquire);
                         let create_category = if create_category != 0 { Some(crate::converti(create_category)) } else { None };
+                        let delete_non_created_channels = handler.creator_delete_non_created_channels.load(std::sync::atomic::Ordering::Acquire);
 
                         let delete_delay = {
                             let delete_delay = std::time::Duration::from_nanos(handler.creator_delete_delay_nanoseconds.load(std::sync::atomic::Ordering::Acquire));
                             const SECS_PER_DAY: u32 = 24*60*60;
                             let delete_days = delete_delay.as_secs() / 24 / 60 / 60;
-                            let delete_days = (delete_days % 30) + delete_delay.as_secs()/u64::from(SECS_PER_DAY);
                             //This assumes 30 days per month, which is not correct, but good enough for this purpose.
                             sqlx::postgres::types::PgInterval{
                                 months: (delete_days / 30) as i32,
-                                days: (delete_days%30) as i32,
-                                microseconds: i64::from(delete_delay.subsec_micros()) + ((delete_delay.as_secs()%u64::from(SECS_PER_DAY))*1_000*1_000) as i64,
+                                days: (delete_days % 30) as i32,
+                                microseconds: i64::from(delete_delay.subsec_micros()) + (delete_delay.as_secs()%u64::from(SECS_PER_DAY)) as i64,
                             }
                         };
-                        sqlx::query!("INSERT INTO temp_channels (guild_id, creator_channel, create_category, delete_delay) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
-                    guild, creator_channel, create_category, delete_delay).execute(&mut *transaction).await?;
+                        sqlx::query!("INSERT INTO temp_channels (guild_id, creator_channel, create_category, delete_non_created_channels, delete_delay) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+                    guild, creator_channel, create_category, delete_non_created_channels, delete_delay).execute(&mut *transaction).await?;
                     }
                     for (channel, ()) in handler.created_channels.iter(&sdd::Guard::new()).map(|(channel, _)|(*channel, ())).collect::<Vec<_>>().into_iter() {
                         let channel = crate::converti(channel.get());

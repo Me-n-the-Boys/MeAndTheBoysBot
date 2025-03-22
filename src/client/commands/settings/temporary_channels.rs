@@ -9,6 +9,7 @@ use poise::serenity_prelude as serenity;
         "set_category",
         "ignored_channels",
         "list_ignored_channels",
+        "delete_non_created_channels",
         "delete_delay",
     ),
     default_member_permissions = "MANAGE_GUILD",
@@ -161,6 +162,33 @@ async fn list_ignored_channels(ctx: Context<'_>) -> Result<(), Error> {
     }
     Ok(())
 }
+
+
+///Chooses to dis-/allow deletion of other channels in the same category as the creation category.
+#[poise::command(
+    slash_command,
+    guild_only,
+    required_permissions = "MANAGE_GUILD",
+)]
+async fn delete_non_created_channels(ctx: Context<'_>, value: bool) -> Result<(), Error> {
+    if let Some(guild) = ctx.guild_id() {
+        let db = crate::get_db().await;
+        let guild = crate::converti(guild.get());
+        let out = sqlx::query!("UPDATE temp_channels SET delete_non_created_channels = $2 WHERE guild_id = $1", guild, value).execute(&db).await?;
+        match out.rows_affected() {
+            0 => {
+                ctx.say(format!("No creator channel is configured.")).await?;
+            },
+            _ => {
+                ctx.say(format!("Changed the value for deleting non-created channels to {value}.")).await?;
+            },
+        }
+    } else {
+        ctx.say("This command can only be used in a server.").await?;
+    }
+    Ok(())
+}
+
 
 
 ///Sets the time between the last person leaving a created channel and the channel being deleted.
