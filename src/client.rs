@@ -83,7 +83,7 @@ WHEN NOT MATCHED THEN INSERT (guild_id, user_id, vc) VALUES (vc_xp_apply.guild_i
 ", crate::converti(guild_id.get()), crate::converti(new_state.user_id.get())).execute(&db).await {
                                 Ok(v) => match v.rows_affected(){
                                     0 => {
-                                        tracing::info!("Error applying voice xp for user {} in guild {}: No rows affected", new_state.user_id, new_state.guild_id);
+                                        tracing::info!("Error applying voice xp for user {} in guild {:?}: No rows affected", new_state.user_id, new_state.guild_id);
                                     },
                                     _ => {},
                                 },
