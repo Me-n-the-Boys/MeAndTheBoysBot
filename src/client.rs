@@ -126,7 +126,10 @@ WHEN NOT MATCHED THEN INSERT (guild_id, user_id, time) VALUES (input.guild_id, i
                         },
                         None => {
                             tracing::debug!("User {} left a channel", new_state.user_id);
-                            match sqlx::query!(r#"DELETE FROM temp_channels_created_users WHERE guild_id = $1 AND user_id = $2"#, crate::converti(guild_id.get()), crate::converti(user_id.get())).execute(&self.pool).await {
+                            match sqlx::query!(
+r#"DELETE FROM temp_channels_created_users WHERE guild_id = $1 AND user_id = $2"#,
+crate::converti(guild_id.get()), crate::converti(new_state.user_id.get())
+                            ).execute(&self.pool).await {
                                 Ok(_) => {},
                                 Err(err) => {
                                     tracing::error!("Error getting created channels: {err}");
