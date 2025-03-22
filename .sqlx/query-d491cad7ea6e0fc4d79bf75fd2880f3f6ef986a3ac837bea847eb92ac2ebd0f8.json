@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM temp_channels_created WHERE guild_id = $1 AND channel_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d491cad7ea6e0fc4d79bf75fd2880f3f6ef986a3ac837bea847eb92ac2ebd0f8"
+}

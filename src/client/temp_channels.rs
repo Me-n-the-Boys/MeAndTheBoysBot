@@ -260,20 +260,10 @@ WHERE guild_id = $1
                 if let Some(error) = error {
                     self.log_error(&ctx, v.id, format!("There was an error getting the Creator's User: {error}")).await;
                 }
-                match guild_id.move_member(&ctx, user_id, v.id).await {
-                    Ok(_) => {},
-                    Err(err) => {
-                        tracing::error!("Error moving member to temporary channel. Deleting temporary channel. Error: {err}");
-                        match v.delete(&ctx).await {
-                            Ok(_) => {},
-                            Err(err) => {
-                                tracing::error!("Error deleting temporary channel after Moving user to temporary channel failed: {err}");
-                            }
-                        }
-                    }
-                }
+                //Insert channel first into temp_channels_created, then move user
+                //It has to be done this way, so that when the user is moved, the channel is already in the list of created channels
+                //Thus the voice state update trigger can add the user to the channel in the db
                 let channel = v.id;
-                tracing::info!("Created channel {channel}, but did not insert yet");
                 {
                     match sqlx::query!("INSERT INTO temp_channels_created (guild_id, channel_id, mark_delete) VALUES($1, $2, NULL)", crate::converti(guild_id.get()), crate::converti(channel.get())).execute(&db).await {
                         Ok(_) => {},
@@ -284,6 +274,28 @@ WHERE guild_id = $1
                     }
                 }
                 tracing::info!("Created channel {channel}");
+                match guild_id.move_member(&ctx, user_id, v.id).await {
+                    Ok(_) => {},
+                    Err(err) => {
+                        tracing::error!("Error moving member to temporary channel. Deleting temporary channel. Error: {err}");
+                        self.log_error(&ctx, v.id, format!("Error moving member to temporary channel. Deleting temporary channel. Error: {err}")).await;
+                        match v.delete(&ctx).await {
+                            Ok(_) => {},
+                            Err(err) => {
+                                tracing::error!("Error deleting temporary channel after Moving user to temporary channel failed: {err}");
+                            }
+                        }
+                        {
+                            match sqlx::query!("DELETE FROM temp_channels_created WHERE guild_id = $1 AND channel_id = $2", crate::converti(guild_id.get()), crate::converti(channel.get())).execute(&db).await {
+                                Ok(_) => {},
+                                Err(err) => {
+                                    tracing::error!("Error deleting channel from temp_channels_created: {err}");
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
             }
             Err(err) => {
                 if let Some(error) = error {
