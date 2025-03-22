@@ -6,117 +6,214 @@ use poise::serenity_prelude as serenity;
 use serenity::utils::validate_token;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
-use serenity::all::{Context, GatewayIntents, Guild, PartialGuild};
+use serenity::all::{Context, Event, GatewayIntents, Guild, PartialGuild};
 use tokio::io::AsyncReadExt;
 
 /// User data, which is stored and accessible in all command invocations
 struct Data;
-struct Handler;
-impl serenity::client::EventHandler for Handler {
-    fn guild_update<'life0, 'async_trait>(&self, _: Context, _: Option<Guild>, new_data: PartialGuild)
-    -> std::pin::Pin<Box<dyn std::future::Future<Output=()> + Send + 'async_trait>>
-    where Self: 'async_trait, 'life0: 'async_trait
-    {
-        Box::pin(async move {
-            let id = crate::converti(new_data.id.get());
-            let name = new_data.name.as_str();
-            let icon = new_data.icon.map(|v|v.to_string());
+#[derive(Clone)]
+struct Handler{
+    pool: sqlx::PgPool,
+}
+#[poise::async_trait]
+impl serenity::client::RawEventHandler for Handler {
+    async fn raw_event(&self, ctx: Context, ev: Event) {
+        match ev {
+            Event::Ready(_) => {}
+            Event::Resumed(_) => {}
+            Event::UserUpdate(_) => {}
 
-            let db = crate::get_db().await;
-            match sqlx::query!(r#"WITH guilds AS (MERGE INTO guilds USING guilds as src ON src.guild_id = $1
-WHEN MATCHED THEN UPDATE SET name = $2, icon = $3
-WHEN NOT MATCHED THEN INSERT (guild_id, name, icon) VALUES ($1, $2, $3)
-RETURNING guilds.guild_id
-)
-MERGE INTO xp USING guilds ON xp.guild_id = guilds.guild_id
-WHEN MATCHED THEN DO NOTHING
-WHEN NOT MATCHED THEN INSERT (guild_id) VALUES (guilds.guild_id)
-"#, id, name, icon).execute(&db).await{
-                Ok(_) => {},
-                Err(err) => {
-                    tracing::error!("Error updating guild: {err}");
+            Event::ChannelCreate(channel) => {
+                let channel_name = channel.channel.name;
+                let channel_id = crate::converti(channel.channel.id.get());
+                let category_id = channel.channel.parent_id.map(serenity::ChannelId::get).map(crate::converti);
+                let guild_id = crate::converti(channel.channel.guild_id.get());
+                match sqlx::query!(
+r#"INSERT INTO temp_channels_created SELECT guild_id, $2::bigint as channel_id, NULL as mark_delete, $4::text as name FROM temp_channels
+WHERE guild_id = $1 AND temp_channels.create_category = $3"#, guild_id, channel_id, category_id, channel_name).execute(&self.pool).await
+                {
+                    Ok(_) => {},
+                    Err(err) => {
+                        tracing::error!("Error creating temp channel: {err}");
+                    }
                 }
             }
-        })
-    }
-    fn voice_state_update<'life0, 'async_trait>(&'life0 self, ctx: poise::serenity_prelude::Context, _: Option<serenity::all::VoiceState>, new_state: serenity::all::VoiceState)
-    -> std::pin::Pin<Box<dyn std::future::Future<Output=()> + Send + 'async_trait>>
-    where Self: 'async_trait, 'life0: 'async_trait
-    {
-        Box::pin(async move {
-            let guild_id = match new_state.guild_id{
-                Some(v) => v,
-                None => return,
-            };
-            let db = crate::get_db().await;
-            let apply_vc = async {
-                match new_state.channel_id {
-                    None => {
-                        match sqlx::query!("WITH vc_xp_apply AS (
+            Event::ChannelUpdate(channel) => {
+                let channel_name = channel.channel.name;
+                let channel_id = crate::converti(channel.channel.id.get());
+                let guild_id = crate::converti(channel.channel.guild_id.get());
+                match sqlx::query!(
+                    r#"UPDATE temp_channels_created SET name = $1 WHERE guild_id = $2 AND channel_id = $3"#,
+                    channel_name, guild_id, channel_id
+                ).execute(&self.pool).await
+                {
+                    Ok(_) => {},
+                    Err(err) => {
+                        tracing::error!("Error updating temp channel: {err}");
+                    }
+                }
+            }
+            Event::ChannelDelete(channel) => {
+                let channel_id = crate::converti(channel.channel.id.get());
+                let guild_id = crate::converti(channel.channel.guild_id.get());
+                match sqlx::query!(r#"DELETE FROM temp_channels_created WHERE guild_id = $1 AND channel_id = $2"#, guild_id, channel_id).execute(&self.pool).await {
+                    Ok(_) => {},
+                    Err(err) => {
+                        tracing::error!("Error deleting temp channel: {err}");
+                    }
+                }
+            }
+
+            Event::GuildCreate(create) => {
+                self.guild_info(create.guild.into()).await
+            }
+            Event::GuildUpdate(update) => {
+                self.guild_info(update.guild).await
+            }
+            Event::GuildDelete(_) => {}
+
+            Event::GuildMemberAdd(_) => {}
+            Event::GuildMemberRemove(_) => {}
+            Event::GuildMemberUpdate(_) => {}
+            Event::GuildMembersChunk(_) => {}
+
+            Event::VoiceStateUpdate(state) => {
+                let new_state = state.voice_state;
+                let guild_id = match new_state.guild_id{
+                    Some(v) => v,
+                    None => return,
+                };
+                let db = crate::get_db().await;
+                let apply_vc = async {
+                    match new_state.channel_id {
+                        None => {
+                            match sqlx::query!("WITH vc_xp_apply AS (
     DELETE FROM xp_vc_tmp WHERE guild_id = $1 AND user_id = $2 RETURNING *
 ) MERGE INTO xp_user USING vc_xp_apply ON xp_user.guild_id = vc_xp_apply.guild_id AND xp_user.user_id = vc_xp_apply.user_id
 WHEN MATCHED THEN UPDATE SET vc = xp_user.vc + (now() - vc_xp_apply.time)
 WHEN NOT MATCHED THEN INSERT (guild_id, user_id, vc) VALUES (vc_xp_apply.guild_id, vc_xp_apply.user_id, (now() - vc_xp_apply.time))
 ", crate::converti(guild_id.get()), crate::converti(new_state.user_id.get())).execute(&db).await {
-                            Ok(v) => match v.rows_affected(){
-                                0 => {
-                                    tracing::error!("Error applying voice xp: No rows affected");
+                                Ok(v) => match v.rows_affected(){
+                                    0 => {
+                                        tracing::error!("Error applying voice xp: No rows affected");
+                                    },
+                                    _ => {},
                                 },
-                                _ => {},
-                            },
-                            Err(err) => {
-                                tracing::error!("Error applying voice xp: {err}");
+                                Err(err) => {
+                                    tracing::error!("Error applying voice xp: {err}");
+                                }
                             }
-                        }
-                    },
-                    Some(_) => {
-                        match sqlx::query!(r#"MERGE INTO xp_vc_tmp
+                        },
+                        Some(_) => {
+                            match sqlx::query!(r#"MERGE INTO xp_vc_tmp
 USING (SELECT $1::bigint as guild_id, $2::bigint as user_id) as input ON xp_vc_tmp.guild_id = input.guild_id AND xp_vc_tmp.user_id = input.user_id
 WHEN MATCHED THEN DO NOTHING
 WHEN NOT MATCHED THEN INSERT (guild_id, user_id, time) VALUES (input.guild_id, input.user_id, now())
 "#, crate::converti(guild_id.get()), crate::converti(new_state.user_id.get())).execute(&db).await {
-                            Ok(_) => {},
-                            Err(err) => {
-                                tracing::error!("Error adding user to voice xp tmp: {err}");
+                                Ok(_) => {},
+                                Err(err) => {
+                                    tracing::error!("Error adding user to voice xp tmp: {err}");
+                                }
                             }
                         }
                     }
-                }
-            };
-            let temp_channel = async {
-                match new_state.channel_id {
-                    Some(channel) => {
-                        self.vc_join_channel_temp_channel(db.clone(), ctx, guild_id, new_state.user_id, channel).await
-                    },
-                    None => {
-                        self.check_delete_channels(db.clone(), ctx, new_state.user_id, guild_id).await
+                };
+                let temp_channel = async {
+                    match new_state.channel_id {
+                        Some(channel) => {
+                            self.vc_join_channel_temp_channel(ctx, guild_id, new_state.user_id, channel).await
+                        },
+                        None => {
+                            self.check_delete_channels(ctx, new_state.user_id, guild_id).await
+                        }
                     }
-                }
-            };
-            tokio::join!(
-                apply_vc,
-                temp_channel
-            );
-        })
-    }
+                };
+                tokio::join!(
+                    temp_channel,
+                    apply_vc,
+                );
+            }
+            Event::VoiceChannelStatusUpdate(_) => {}
 
-    fn message<'life0, 'async_trait>(&'life0 self, _: poise::serenity_prelude::Context, message: serenity::model::channel::Message)
-                                                -> std::pin::Pin<Box<dyn std::future::Future<Output=()> + Send + 'async_trait>>
-    where Self: 'async_trait, 'life0: 'async_trait
-    {
-        Box::pin(async move {
-            let db = crate::get_db().await;
-            self.message_xp(db, message).await;
-        })
+            Event::MessageCreate(create) => {
+                self.message_xp(create.message).await;
+            }
+            Event::MessageUpdate(_) => {}
+            Event::MessageDelete(_) => {}
+            Event::MessageDeleteBulk(_) => {}
+            Event::ReactionAdd(add) => {
+                self.message_xp_react(add.reaction).await;
+            }
+            Event::ReactionRemove(_) => {}
+            Event::ReactionRemoveAll(_) => {}
+            Event::ReactionRemoveEmoji(_) => {}
+
+            //Unneeded events
+            Event::VoiceServerUpdate(_) => {}
+            Event::CommandPermissionsUpdate(_) => {}
+            Event::AutoModRuleCreate(_) => {}
+            Event::AutoModRuleUpdate(_) => {}
+            Event::AutoModRuleDelete(_) => {}
+            Event::AutoModActionExecution(_) => {}
+            Event::ChannelPinsUpdate(_) => {}
+            Event::GuildAuditLogEntryCreate(_) => {}
+            Event::GuildBanAdd(_) => {}
+            Event::GuildBanRemove(_) => {}
+            Event::GuildEmojisUpdate(_) => {}
+            Event::GuildIntegrationsUpdate(_) => {}
+            Event::GuildRoleCreate(_) => {}
+            Event::GuildRoleDelete(_) => {}
+            Event::GuildRoleUpdate(_) => {}
+            Event::GuildStickersUpdate(_) => {}
+            Event::InviteCreate(_) => {}
+            Event::InviteDelete(_) => {}
+            Event::PresenceUpdate(_) => {}
+            // Event::PresencesReplace(_) => {}
+            Event::TypingStart(_) => {}
+            Event::WebhookUpdate(_) => {}
+            Event::InteractionCreate(_) => {}
+            Event::IntegrationCreate(_) => {}
+            Event::IntegrationUpdate(_) => {}
+            Event::IntegrationDelete(_) => {}
+            Event::StageInstanceCreate(_) => {}
+            Event::StageInstanceUpdate(_) => {}
+            Event::StageInstanceDelete(_) => {}
+            Event::ThreadCreate(_) => {}
+            Event::ThreadUpdate(_) => {}
+            Event::ThreadDelete(_) => {}
+            Event::ThreadListSync(_) => {}
+            Event::ThreadMemberUpdate(_) => {}
+            Event::ThreadMembersUpdate(_) => {}
+            Event::GuildScheduledEventCreate(_) => {}
+            Event::GuildScheduledEventUpdate(_) => {}
+            Event::GuildScheduledEventDelete(_) => {}
+            Event::GuildScheduledEventUserAdd(_) => {}
+            Event::GuildScheduledEventUserRemove(_) => {}
+            Event::EntitlementCreate(_) => {}
+            Event::EntitlementUpdate(_) => {}
+            Event::EntitlementDelete(_) => {}
+            Event::MessagePollVoteAdd(_) => {}
+            Event::MessagePollVoteRemove(_) => {}
+            Event::Unknown(_) => {}
+            _ => {}
+        }
     }
-    fn reaction_add<'life0, 'async_trait>(&'life0 self, _: poise::serenity_prelude::Context, add_reaction: serenity::Reaction)
-                                                -> std::pin::Pin<Box<dyn std::future::Future<Output=()> + Send + 'async_trait>>
-    where Self: 'async_trait, 'life0: 'async_trait
-    {
-        Box::pin(async move {
-            let db = crate::get_db().await;
-            self.message_xp_react(db, add_reaction).await;
-        })
+}
+
+impl Handler{
+    async fn guild_info(&self, new_data: serenity::PartialGuild) {
+        let id = crate::converti(new_data.id.get());
+        let name = new_data.name.as_str();
+        let icon = new_data.icon.map(|v| v.to_string());
+
+        let db = crate::get_db().await;
+        match sqlx::query!(r#"INSERT INTO guilds (guild_id, name, icon) VALUES ($1, $2, $3) ON CONFLICT (guild_id) DO UPDATE SET name = $2, icon = $3"#, id, name, icon)
+        .execute(&db).await {
+            Ok(_) => {},
+            Err(err) => {
+                tracing::error!("Error updating guild: {err}");
+            }
+        }
     }
 }
 
@@ -349,9 +446,12 @@ pub async fn init_client(auth: Arc<crate::rocket::auth::Auth>) -> ::anyhow::Resu
         .initialize_owners(true)
         .build();
 
+    let handler = Handler{
+        pool: crate::get_db().await,
+    };
     let client = serenity::Client::builder(&token, GatewayIntents::default().union(GatewayIntents::MESSAGE_CONTENT))
         .framework(framework)
-        .event_handler(Handler)
+        .raw_event_handler(handler.clone())
         .await?;
 
     let shard_manager = client.shard_manager.clone();
@@ -385,7 +485,7 @@ UPDATE xp_user SET vc = xp_user.vc + (now() - xp_vc_tmp.time) FROM xp_vc_tmp WHE
                                 tracing::error!("Error applying voice xp: {err}");
                             }
                         }
-                        Handler.apply_previous_message_xp(db.clone(), None, None).await;
+                        handler.apply_previous_message_xp(None, None).await;
                     },
                 }
             }

@@ -2,14 +2,14 @@ use std::num::NonZeroU64;
 use poise::serenity_prelude as serenity;
 
 impl super::Handler {
-    pub(crate) async fn vc_join_channel_temp_channel(&self, db: sqlx::PgPool, ctx: serenity::Context, guild_id: serenity::GuildId, user_id: serenity::UserId, channel_id: serenity::ChannelId) {
-        match sqlx::query!(r#"SELECT $2 = ANY(SELECT creator_channel FROM temp_channels WHERE guild_id = $1) as "is_creator_channel!""#, crate::converti(guild_id.get()), crate::converti(channel_id.get())).fetch_one(&db).await {
+    pub(crate) async fn vc_join_channel_temp_channel(&self, ctx: serenity::Context, guild_id: serenity::GuildId, user_id: serenity::UserId, channel_id: serenity::ChannelId) {
+        match sqlx::query!(r#"SELECT $2 = ANY(SELECT creator_channel FROM temp_channels WHERE guild_id = $1) as "is_creator_channel!""#, crate::converti(guild_id.get()), crate::converti(channel_id.get())).fetch_one(&self.pool).await {
             Ok(v) => match v.is_creator_channel {
                 true => {
-                    self.create_channel(db, &ctx, user_id, guild_id).await;
+                    self.create_channel(&ctx, user_id, guild_id).await;
                 }
                 false => {
-                    match sqlx::query!("UPDATE temp_channels_created SET mark_delete = NULL WHERE channel_id = $1 AND guild_id = $2", crate::converti(channel_id.get()), crate::converti(guild_id.get())).execute(&db).await {
+                    match sqlx::query!("UPDATE temp_channels_created SET mark_delete = NULL WHERE channel_id = $1 AND guild_id = $2", crate::converti(channel_id.get()), crate::converti(guild_id.get())).execute(&self.pool).await {
                         Ok(v) => match v.rows_affected() {
                             0 => {
                                 tracing::info!("Channel {channel_id} was already deleted or isn't a created channel");
@@ -20,7 +20,7 @@ impl super::Handler {
                             tracing::error!("Error updating temp_channels_created: {err}");
                         }
                     }
-                    match sqlx::query!("INSERT INTO temp_channels_created_users (guild_id, channel_id, user_id) VALUES ($2, $1, $3)", crate::converti(channel_id.get()), crate::converti(guild_id.get()), crate::converti(user_id.get())).execute(&db).await {
+                    match sqlx::query!("INSERT INTO temp_channels_created_users (guild_id, channel_id, user_id) VALUES ($2, $1, $3)", crate::converti(channel_id.get()), crate::converti(guild_id.get()), crate::converti(user_id.get())).execute(&self.pool).await {
                         Ok(v) => match v.rows_affected() {
                             0 => {
                                 tracing::info!("Channel {channel_id} isn't a created channel?");
@@ -31,7 +31,7 @@ impl super::Handler {
                             tracing::error!("Error updating temp_channels_created_users: {err}");
                         }
                     }
-                    self.check_delete_channels(db, ctx, user_id, guild_id).await
+                    self.check_delete_channels(ctx, user_id, guild_id).await
                 },
             }
             Err(err) => {
@@ -54,8 +54,11 @@ impl super::Handler {
             }
         }
     }
-    async fn is_channel_empty(&self, db: sqlx::PgPool, guild_id: serenity::GuildId, channel_id: serenity::ChannelId) -> bool {
-        match sqlx::query!(r#"SELECT Count(*) as "count!" FROM temp_channels_created_users WHERE guild_id = $1 AND channel_id = $2"#, crate::converti(guild_id.get()), crate::converti(channel_id.get())).fetch_one(&db).await {
+    async fn is_channel_empty(&self, guild_id: serenity::GuildId, channel_id: serenity::ChannelId) -> bool {
+        match sqlx::query!(
+            r#"SELECT Count(*) as "count!" FROM temp_channels_created_users WHERE guild_id = $1 AND channel_id = $2"#,
+            crate::converti(guild_id.get()), crate::converti(channel_id.get())
+        ).fetch_one(&self.pool).await {
             Ok(v) => match v.count {
                 0 => true,
                 _ => {
@@ -70,8 +73,8 @@ impl super::Handler {
         }
     }
 
-    async fn check_delete_channel(&self, db: sqlx::PgPool, ctx: &poise::serenity_prelude::Context, channel: serenity::ChannelId, guild_id: serenity::GuildId) {
-        if !self.is_channel_empty(db.clone(), guild_id, channel).await {
+    async fn check_delete_channel(&self, ctx: &poise::serenity_prelude::Context, channel: serenity::ChannelId, guild_id: serenity::GuildId) {
+        if !self.is_channel_empty(guild_id, channel).await {
             return;
         }
         let mark_delete = match sqlx::query!(r#"
@@ -84,7 +87,7 @@ WHEN MATCHED AND mark_delete IS NULL THEN UPDATE SET mark_delete = now()
 WHEN NOT MATCHED THEN DO NOTHING
 RETURNING mark_delete = now() as "mark_delete!", now() as "deleted_at!"
         "#,
-            crate::converti(guild_id.get()), crate::converti(channel.get())).fetch_optional(&db).await
+            crate::converti(guild_id.get()), crate::converti(channel.get())).fetch_optional(&self.pool).await
         {
             Ok(None) => {
                 tracing::error!("We did not create channel: <#{channel}>");
@@ -107,7 +110,7 @@ SELECT
 from temp_channels
 WHERE guild_id = $1
         "#,
-            crate::converti(guild_id.get()), crate::converti(channel.get())).fetch_one(&db).await
+            crate::converti(guild_id.get()), crate::converti(channel.get())).fetch_one(&self.pool).await
         {
             Ok(v) => v,
             Err(err) => {
@@ -153,12 +156,12 @@ WHERE guild_id = $1
             return;
         }
 
-        if !self.is_channel_empty(db.clone(), guild_id, channel).await {
+        if !self.is_channel_empty(guild_id, channel).await {
             return;
         }
 
         match sqlx::query!(r#"DELETE FROM temp_channels_created WHERE guild_id = $2 AND channel_id = $3 AND mark_delete IS NOT NULL AND mark_delete = $1::timestamptz RETURNING *"#,
-            mark_delete.deleted_at, crate::converti(guild_id.get()), crate::converti(channel.get())).fetch_optional(&db).await
+            mark_delete.deleted_at, crate::converti(guild_id.get()), crate::converti(channel.get())).fetch_optional(&self.pool).await
         {
             Err(v) => {
                 tracing::error!("Error checking if channel should be deleted: {v}");
@@ -187,8 +190,8 @@ WHERE guild_id = $1
             }
         }
     }
-    pub(crate) async fn check_delete_channels(&self, db: sqlx::PgPool, ctx: poise::serenity_prelude::Context, user_id: serenity::UserId, guild_id: serenity::GuildId) {
-        match sqlx::query!(r#"DELETE FROM temp_channels_created_users WHERE guild_id = $1 AND user_id = $2"#, crate::converti(guild_id.get()), crate::converti(user_id.get())).execute(&db).await {
+    pub(crate) async fn check_delete_channels(&self, ctx: poise::serenity_prelude::Context, user_id: serenity::UserId, guild_id: serenity::GuildId) {
+        match sqlx::query!(r#"DELETE FROM temp_channels_created_users WHERE guild_id = $1 AND user_id = $2"#, crate::converti(guild_id.get()), crate::converti(user_id.get())).execute(&self.pool).await {
             Ok(_) => {},
             Err(err) => {
                 tracing::error!("Error getting created channels: {err}");
@@ -198,7 +201,7 @@ WHERE guild_id = $1
 
         let channels = match sqlx::query!(r#"SELECT channel_id FROM temp_channels_created WHERE (
 SELECT COUNT(*) FROM temp_channels_created_users WHERE temp_channels_created_users.guild_id = temp_channels_created.guild_id AND temp_channels_created_users.channel_id = temp_channels_created.channel_id
-) = 0"#).fetch_all(&db).await {
+) = 0"#).fetch_all(&self.pool).await {
             Ok(v) => v,
             Err(err) => {
                 tracing::error!("Error getting created channels: {err}");
@@ -207,16 +210,16 @@ SELECT COUNT(*) FROM temp_channels_created_users WHERE temp_channels_created_use
         };
 
         for channel in channels {
-            self.check_delete_channel(db.clone(), &ctx, serenity::ChannelId::new(crate::convertu(channel.channel_id)), guild_id).await;
+            self.check_delete_channel(&ctx, serenity::ChannelId::new(crate::convertu(channel.channel_id)), guild_id).await;
         }
     }
-    async fn create_channel(&self, db: sqlx::PgPool, ctx: &poise::serenity_prelude::Context, user_id: serenity::UserId, guild_id: serenity::GuildId) {
+    async fn create_channel(&self, ctx: &poise::serenity_prelude::Context, user_id: serenity::UserId, guild_id: serenity::GuildId) {
         let res = match sqlx::query!(r#"SELECT
 (SELECT Count(*) FROM temp_channels_created WHERE guild_id = $1) + (SELECT COUNT(*) FROM temp_channels_ignore WHERE guild_id = $1) as "count!",
 create_category
 FROM temp_channels
 WHERE guild_id = $1
-"#, crate::converti(guild_id.get())).fetch_one(&db).await {
+"#, crate::converti(guild_id.get())).fetch_one(&self.pool).await {
             Ok(v) => v,
             Err(err) => {
                 tracing::error!("Error getting channel count: {err}");
@@ -260,20 +263,8 @@ WHERE guild_id = $1
                 if let Some(error) = error {
                     self.log_error(&ctx, v.id, format!("There was an error getting the Creator's User: {error}")).await;
                 }
-                //Insert channel first into temp_channels_created, then move user
-                //It has to be done this way, so that when the user is moved, the channel is already in the list of created channels
-                //Thus the voice state update trigger can add the user to the channel in the db
-                let channel = v.id;
-                {
-                    match sqlx::query!("INSERT INTO temp_channels_created (guild_id, channel_id, mark_delete) VALUES($1, $2, NULL)", crate::converti(guild_id.get()), crate::converti(channel.get())).execute(&db).await {
-                        Ok(_) => {},
-                        Err(err) => {
-                            tracing::error!("Error inserting channel into temp_channels_created: {err}");
-                            return;
-                        }
-                    }
-                }
-                tracing::info!("Created channel {channel}");
+                //Channel should be inserted automatically by the event handler.
+                tracing::info!("Created channel {v}");
                 match guild_id.move_member(&ctx, user_id, v.id).await {
                     Ok(_) => {},
                     Err(err) => {
@@ -285,15 +276,7 @@ WHERE guild_id = $1
                                 tracing::error!("Error deleting temporary channel after Moving user to temporary channel failed: {err}");
                             }
                         }
-                        {
-                            match sqlx::query!("DELETE FROM temp_channels_created WHERE guild_id = $1 AND channel_id = $2", crate::converti(guild_id.get()), crate::converti(channel.get())).execute(&db).await {
-                                Ok(_) => {},
-                                Err(err) => {
-                                    tracing::error!("Error deleting channel from temp_channels_created: {err}");
-                                    return;
-                                }
-                            }
-                        }
+                        //Channel deletion is handled automatically by the event handler.
                     }
                 }
             }

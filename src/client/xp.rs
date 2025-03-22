@@ -9,8 +9,20 @@ pub struct TextXpInfo {
 }
 
 impl super::Handler {
-    pub(super) async fn apply_previous_message_xp(&self, db: sqlx::PgPool, user_id: Option<serenity::UserId>, guild_id: Option<serenity::GuildId>) {
-        let result = match sqlx::query!(r#"SELECT guild_id as "guild_id!", user_id as "user_id!", total_xp as "total_xp!", applyable_xp as "applyable_xp!", xp_punish as "xp_punish!", duration as "duration!" FROM apply_previous_message_xp($1, $2)"#, guild_id.map(|v|crate::converti(v.get())), user_id.map(|v|crate::converti(v.get()))).fetch_all(&db).await {
+    pub(super) async fn apply_previous_message_xp(&self, user_id: Option<serenity::UserId>, guild_id: Option<serenity::GuildId>) {
+        let result = match sqlx::query!(
+r#"SELECT
+    guild_id as "guild_id!",
+    user_id as "user_id!",
+    total_xp as "total_xp!",
+    applyable_xp as "applyable_xp!",
+    xp_punish as "xp_punish!",
+    duration as "duration!"
+FROM apply_previous_message_xp($1, $2)"#,
+guild_id.map(|v|crate::converti(v.get())),
+user_id.map(|v|crate::converti(v.get()))
+        ).fetch_all(&self.pool).await
+        {
             Ok(v) => v,
             Err(err) => {
                 tracing::error!("Error applying previous message xp: {err}");
@@ -26,43 +38,43 @@ impl super::Handler {
             }
         }
     }
-    pub(in super) async fn message_xp(&self, db: sqlx::PgPool, message: serenity::Message) {
+    pub(in super) async fn message_xp(&self, message: serenity::Message) {
         let guild_id = match message.guild_id {
             Some(v) => v,
             None => return,
         };
         //Ignore message, if sent in an ignored channel or by a bot
-        if message.author.bot || message.author.system || self.xp_is_ignored(db.clone(), message.channel_id, guild_id).await {
+        if message.author.bot || message.author.system || self.xp_is_ignored(message.channel_id, guild_id).await {
             return;
         }
         //Apply message xp
         {
             let xp = calculate_message_text_xp(BASE_TEXT_XP, &message);
-            self.apply_previous_message_xp(db.clone(), Some(message.author.id), Some(guild_id)).await;
-            self.add_tmp_txt_xp(db, message.author.id, guild_id, xp).await;
+            self.apply_previous_message_xp(Some(message.author.id), Some(guild_id)).await;
+            self.add_tmp_txt_xp(message.author.id, guild_id, xp).await;
         };
     }
-    pub(crate) async fn message_xp_react(&self, db: sqlx::PgPool, reaction: serenity::Reaction) {
+    pub(crate) async fn message_xp_react(&self, reaction: serenity::Reaction) {
         let guild_id = match reaction.guild_id {
             Some(v) => v,
             None => return,
         };
-        if self.xp_is_ignored(db.clone(), reaction.channel_id, guild_id).await { return;}
+        if self.xp_is_ignored(reaction.channel_id, guild_id).await { return;}
 
         let mut xp = BASE_XP_REACT;
         if reaction.burst { xp*=2; }
         {
             if let Some(member) = reaction.member {
-                self.apply_previous_message_xp(db.clone(), Some(member.user.id), Some(guild_id)).await;
-                self.add_tmp_txt_xp(db.clone(), member.user.id, guild_id, xp).await;
+                self.apply_previous_message_xp(Some(member.user.id), Some(guild_id)).await;
+                self.add_tmp_txt_xp(member.user.id, guild_id, xp).await;
             }
             if let Some(member) =  reaction.message_author_id {
-                self.add_tmp_txt_xp(db.clone(), member, guild_id, xp).await;
+                self.add_tmp_txt_xp(member, guild_id, xp).await;
             }
         }
     }
-    async fn xp_is_ignored(&self, db: sqlx::PgPool, channel_id: serenity::ChannelId, guild_id: serenity::GuildId) -> bool {
-        match sqlx::query!(r#"SELECT $1 = ANY(SELECT channel_id FROM xp_channels_ignored WHERE guild_id = $2) as "ignored!""#, crate::converti(channel_id.get()), crate::converti(guild_id.get())).fetch_one(&db).await {
+    async fn xp_is_ignored(&self, channel_id: serenity::ChannelId, guild_id: serenity::GuildId) -> bool {
+        match sqlx::query!(r#"SELECT $1 = ANY(SELECT channel_id FROM xp_channels_ignored WHERE guild_id = $2) as "ignored!""#, crate::converti(channel_id.get()), crate::converti(guild_id.get())).fetch_one(&self.pool).await {
             Ok(v) => v.ignored,
             Err(err) => {
                 tracing::error!("Error checking if channel is ignored for xp: {err}");
@@ -70,11 +82,11 @@ impl super::Handler {
             },
         }
     }
-    async fn add_tmp_txt_xp(&self, db: sqlx::PgPool, user_id: serenity::UserId, guild_id: serenity::GuildId, xp: i64) {
+    async fn add_tmp_txt_xp(&self, user_id: serenity::UserId, guild_id: serenity::GuildId, xp: i64) {
         match sqlx::query!(r#"MERGE INTO xp_txt_tmp USING (SELECT $1::bigint as user_id, $2::bigint as guild_id) AS input ON xp_txt_tmp.user_id = input.user_id AND xp_txt_tmp.guild_id = input.guild_id
 WHEN MATCHED THEN UPDATE SET xp = xp_txt_tmp.xp + $3
 WHEN NOT MATCHED THEN INSERT (guild_id, user_id, xp, time) VALUES(input.guild_id, input.user_id, $3, now())
-"#, crate::converti(user_id.get()), crate::converti(guild_id.get()), xp).execute(&db).await {
+"#, crate::converti(user_id.get()), crate::converti(guild_id.get()), xp).execute(&self.pool).await {
             Ok(v) => match v.rows_affected() {
                 0 => {
                     tracing::error!("Error adding xp to xp_txt_tmp: No rows affected");
