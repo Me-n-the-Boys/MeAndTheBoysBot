@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\nWITH input AS (SELECT $2::bigint as guild_id, $1::bigint as channel_id, $3::bigint as user_id)\n\nMERGE INTO temp_channels_created_users USING\n    (SELECT input.*,\n        input.channel_id = ANY(SELECT channel_id FROM temp_channels_created WHERE temp_channels_created.guild_id = input.guild_id) as is_created_channel,\n        input.channel_id = ANY(SELECT channel_id FROM temp_channels_ignore WHERE temp_channels_ignore.guild_id = input.guild_id) as is_ignored_channel\n     FROM input\n    ) AS input\n    ON temp_channels_created_users.guild_id = input.guild_id AND temp_channels_created_users.user_id = input.user_id\nWHEN MATCHED AND input.is_ignored_channel THEN DELETE\nWHEN MATCHED AND input.is_created_channel THEN UPDATE SET channel_id = input.channel_id\nWHEN MATCHED THEN DELETE\nWHEN NOT MATCHED AND input.is_ignored_channel THEN DO NOTHING\nWHEN NOT MATCHED AND input.is_created_channel THEN INSERT (guild_id, channel_id, user_id) VALUES (input.guild_id, input.channel_id, input.user_id)\nWHEN NOT MATCHED THEN DO NOTHING\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ad1653d30b19be1dd8bfb12226bdd3638c6cf749a367a8aadcf0338e5a0498db"
+}

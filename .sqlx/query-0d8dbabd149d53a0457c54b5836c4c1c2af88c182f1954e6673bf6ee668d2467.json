@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO temp_channels (guild_id, creator_channel, create_category, delete_non_created_channels, delete_delay) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Bool",
+        "Interval"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0d8dbabd149d53a0457c54b5836c4c1c2af88c182f1954e6673bf6ee668d2467"
+}

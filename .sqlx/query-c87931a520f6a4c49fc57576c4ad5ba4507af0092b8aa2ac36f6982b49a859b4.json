@@ -17,6 +17,11 @@
         "ordinal": 2,
         "name": "mark_delete",
         "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -29,7 +34,8 @@
     "nullable": [
       false,
       false,
-      true
+      true,
+      false
     ]
   },
   "hash": "c87931a520f6a4c49fc57576c4ad5ba4507af0092b8aa2ac36f6982b49a859b4"

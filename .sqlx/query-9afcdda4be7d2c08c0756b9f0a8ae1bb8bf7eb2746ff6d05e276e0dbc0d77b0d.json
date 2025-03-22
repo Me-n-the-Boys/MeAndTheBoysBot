@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT guild_id as \"guild_id!\", user_id as \"user_id!\", total_xp as \"total_xp!\", applyable_xp as \"applyable_xp!\", xp_punish as \"xp_punish!\", duration as \"duration!\" FROM apply_previous_message_xp($1, $2)",
+  "query": "SELECT\n    guild_id as \"guild_id!\",\n    user_id as \"user_id!\",\n    total_xp as \"total_xp!\",\n    applyable_xp as \"applyable_xp!\",\n    xp_punish as \"xp_punish!\",\n    duration as \"duration!\"\nFROM apply_previous_message_xp($1, $2)",
   "describe": {
     "columns": [
       {
@@ -49,5 +49,5 @@
       null
     ]
   },
-  "hash": "f90a6c2874419610ba9cd38fa0c8b007b7924415601012b333b2d15b919675fa"
+  "hash": "9afcdda4be7d2c08c0756b9f0a8ae1bb8bf7eb2746ff6d05e276e0dbc0d77b0d"
 }

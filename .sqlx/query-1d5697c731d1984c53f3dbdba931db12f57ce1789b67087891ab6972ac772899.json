@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE temp_channels_created SET name = $1 WHERE guild_id = $2 AND channel_id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1d5697c731d1984c53f3dbdba931db12f57ce1789b67087891ab6972ac772899"
+}

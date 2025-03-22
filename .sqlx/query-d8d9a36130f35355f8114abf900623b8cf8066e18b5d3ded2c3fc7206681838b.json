@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO temp_channels_created SELECT guild_id, $2::bigint as channel_id, NULL as mark_delete, $4::text as name FROM temp_channels\nWHERE temp_channels.guild_id = $1 AND temp_channels.create_category = $3 AND ($5::boolean OR temp_channels.delete_non_created_channels)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d8d9a36130f35355f8114abf900623b8cf8066e18b5d3ded2c3fc7206681838b"
+}
