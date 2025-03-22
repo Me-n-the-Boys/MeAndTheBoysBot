@@ -374,7 +374,12 @@ UPDATE xp_user SET vc = xp_user.vc + (now() - xp_vc_tmp.time) FROM xp_vc_tmp WHE
 "#)
                         .execute(&db).await {
                             Ok(result) => {
-                                tracing::info!("Applied voice xp of {} users", result.rows_affected());
+                                match result.rows_affected() {
+                                    0 => {},
+                                    v => {
+                                        tracing::info!("Applied voice xp of {v} users", );
+                                    }
+                                }
                             },
                             Err(err) => {
                                 tracing::error!("Error applying voice xp: {err}");
