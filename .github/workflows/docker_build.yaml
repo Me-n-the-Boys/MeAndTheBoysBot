@@ -59,7 +59,7 @@ jobs:
 
       # Build the package defined in the Nix Flake
       - name: Build the derivation defined in the Nix Flake
-        run: nix --extra-experimental-features nix-command --extra-experimental-features flakes build .#$(yq .package.name Cargo.toml)-docker
+        run: nix --extra-experimental-features nix-command --extra-experimental-features flakes build .#$(yq .package.name Cargo.toml)-docker -L
 
       - uses: docker/login-action@v3
         with:
