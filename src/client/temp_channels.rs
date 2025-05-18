@@ -223,21 +223,35 @@ SELECT COUNT(*) FROM temp_channels_created_users WHERE temp_channels_created_use
         }
     }
     async fn create_channel(&self, ctx: &poise::serenity_prelude::Context, user_id: serenity::UserId, guild_id: serenity::GuildId) {
-        let res = match sqlx::query!(r#"SELECT
-(SELECT Count(*) FROM temp_channels_created WHERE guild_id = $1) + (SELECT COUNT(*) FROM temp_channels_ignore WHERE guild_id = $1) as "count!",
-create_category
-FROM temp_channels
-WHERE guild_id = $1
-"#, crate::converti(guild_id.get())).fetch_one(&self.pool).await {
+        let res = match sqlx::query!(
+            r#"SELECT create_category FROM temp_channels WHERE guild_id = $1"#,
+            crate::converti(guild_id.get())
+        ).fetch_one(&self.pool).await {
             Ok(v) => v,
             Err(err) => {
                 tracing::error!("Error getting channel count: {err}");
                 return;
             }
         };
+        let position = {
+            (async ||{
+                let channels = match guild_id.channels(&ctx).await {
+                    Ok(guild) => guild,
+                    Err(err) => {
+                        tracing::error!("Error getting guild channels: {err}");
+                        return None;
+                    }
+                };
+                channels.iter().filter(|(_, channel)| {
+                    channel.parent_id.map(|v|v.get()) == res.create_category.map(crate::convertu)
+                }).map(|(_, channel)| {
+                    channel.position
+                }).max()
+            })().await
+        };
+
         let mut new_channel = serenity::CreateChannel::new("New Channel")
             .kind(serenity::model::channel::ChannelType::Voice)
-            .position(u16::try_from(res.count).unwrap_or(u16::MAX))
             .permissions([
                 serenity::model::channel::PermissionOverwrite {
                     allow:
@@ -250,6 +264,9 @@ WHERE guild_id = $1
                     kind: serenity::model::channel::PermissionOverwriteType::Member(user_id),
                 },
             ]);
+        if let Some(position) = position {
+            new_channel = new_channel.position(position);
+        }
         if let Some(create_category) = res.create_category {
             match NonZeroU64::new(crate::convertu(create_category)) {
                 None => {},
