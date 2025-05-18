@@ -25,7 +25,7 @@
             config.allowUnfree = true;
         };
 
-        rustVersion = pkgs.rust-bin.stable.latest.default;
+        rustVersion = pkgs.rust-bin.stable."1.87.0".default;
 
         rustPlatform = pkgs.makeRustPlatform {
           cargo = rustVersion;
@@ -39,7 +39,7 @@
           openssl
         ];
 
-        package = pkgs.rust.packages.stable.rustPlatform.buildRustPackage rec{
+        package = rustPlatform.buildRustPackage rec{
           pname = manifest.name;
           version = manifest.version;
           src = pkgs.lib.cleanSource ./.;
@@ -54,7 +54,7 @@
           ];
 
           buildInputs = with pkgs; [
-            pkgs.rust-bin.stable.latest.default
+            pkgs.rust-bin.stable."1.87.0".default
           ] ++ commonBuildInputs;
 
           # Certain Rust tools won't work without this
@@ -116,7 +116,7 @@
             #rustfmt
             tokei
           ] ++ commonBuildInputs;
-          RUST_SRC_PATH = pkgs.rust.packages.stable.rustPlatform.rustLibSrc;
+          RUST_SRC_PATH = rustPlatform.rustLibSrc;
           LD_LIBRARY_PATH = lib.makeLibraryPath commonBuildInputs;
           GIT_EXTERNAL_DIFF = "${difftastic}/bin/difft";
         };
