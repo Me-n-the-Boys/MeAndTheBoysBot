@@ -246,7 +246,7 @@ SELECT COUNT(*) FROM temp_channels_created_users WHERE temp_channels_created_use
                     channel.parent_id.map(|v|v.get()) == res.create_category.map(crate::convertu)
                 }).map(|(_, channel)| {
                     channel.position
-                }).max()
+                }).max().map(|v|v.saturating_add(1))
             })().await
         };
 
