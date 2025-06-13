@@ -14,24 +14,7 @@ pub(crate) const BASE_URL: &'static str = "debug.twitch.meandtheboys.c0d3m4513r.
 pub(crate) const BASE_URL: &'static str = "twitch.meandtheboys.c0d3m4513r.com";
 
 pub(in super) async fn launch() -> anyhow::Result<(rocket::Rocket<rocket::Build>, serenity::Client, (tokio::task::JoinHandle<()>, tokio::sync::oneshot::Sender<()>))> {
-    use ::base64::Engine;
-    let secret_key = match ::std::env::var("ROCKET_SECRET_KEY") {
-        Ok(v) => match ::base64::engine::general_purpose::STANDARD.decode(v){
-            Ok(v) => rocket::config::SecretKey::from(v.as_slice()),
-            Err(_) => {
-                ::anyhow::bail!("ROCKET_SECRET_KEY must be stored base64 encoded");
-            }
-        },
-        Err(_) => {
-            ::anyhow::bail!("ROCKET_SECRET_KEY must be set in .env");
-        }
-    };
-    let config = rocket::config::Config{
-        ident: rocket::config::Ident::none(),
-        secret_key,
-        ..rocket::config::Config::release_default()
-    };
-    let rocket = rocket::custom(config)
+    let rocket = rocket::build()
         .mount("/", rocket::routes![
             index::index,
             index::index_none,
