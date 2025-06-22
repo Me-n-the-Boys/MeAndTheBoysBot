@@ -26,11 +26,11 @@ pub async fn ping(ctx: Context<'_>) -> Result<(), Error> {
 pub use settings::settings;
 
 
-///Copies one emoji to the guild the command was run in (5 min cooldown).
+///Copies one emoji to the guild the command was run in (5 sec cooldown).
 #[poise::command(
     slash_command,
     guild_only,
-    user_cooldown = 300,
+    user_cooldown = 5,
     default_member_permissions = "MANAGE_GUILD_EXPRESSIONS",
     required_bot_permissions = "MANAGE_GUILD_EXPRESSIONS",
 )]
