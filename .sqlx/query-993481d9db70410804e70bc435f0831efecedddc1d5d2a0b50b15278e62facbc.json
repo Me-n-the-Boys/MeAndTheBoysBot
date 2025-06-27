@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT give_role_id FROM role_reactions\nWHERE role_reactions.guild_id = $1 AND role_reactions.message_id = $2\n",
+  "query": "SELECT give_role_id FROM role_reactions\nWHERE role_reactions.guild_id = $1 AND role_reactions.message_id = $2 AND $3 = emoji\n",
   "describe": {
     "columns": [
       {
@@ -12,12 +12,13 @@
     "parameters": {
       "Left": [
         "Int8",
-        "Int8"
+        "Int8",
+        "Jsonb"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "636eccd7a1c0fda0c794ccfbca9b151f38fa08bfdb3af647664368dc750457b9"
+  "hash": "993481d9db70410804e70bc435f0831efecedddc1d5d2a0b50b15278e62facbc"
 }

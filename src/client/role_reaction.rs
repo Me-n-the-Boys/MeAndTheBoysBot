@@ -9,11 +9,18 @@ pub async fn add_reaction(ctx: &'_ Context, add: &ReactionAddEvent) {
     let guild_id = member.guild_id;
 
     let db = crate::get_db().await;
+    let emoji = match serde_json::to_value(&add.reaction.emoji) {
+        Ok(v) => v,
+        Err(err) => {
+            log::error!("Error whilst converting reaction to json value");
+            return;
+        }
+    };
     let roles = member.roles.iter().map(|v|v.get().cast_signed()).collect::<Vec<_>>();
     match sqlx::query!("SELECT give_role_id FROM role_reactions
 LEFT JOIN role_limiter ON role_limiter.guild_id = $1 AND role_reactions.give_role_id = role_limiter.role_id
-WHERE role_reactions.guild_id = $1 AND role_reactions.message_id = $2 AND role_limit_predicate($3, role_limiter.bind_roles)
-", guild_id.get().cast_signed(), add.reaction.message_id.get().cast_signed(), roles.as_slice())
+WHERE role_reactions.guild_id = $1 AND role_reactions.message_id = $2 AND role_limit_predicate($3, role_limiter.bind_roles) AND $4 = emoji
+", guild_id.get().cast_signed(), add.reaction.message_id.get().cast_signed(), roles.as_slice(), emoji)
         .fetch_optional(&db)
         .await
     {
@@ -43,11 +50,18 @@ pub async fn remove_reaction(ctx: &'_ Context, remove: &ReactionRemoveEvent) {
         None => return,
         Some(v) => v,
     };
-
+    let emoji = match serde_json::to_value(&remove.reaction.emoji) {
+        Ok(v) => v,
+        Err(err) => {
+            log::error!("Error whilst converting reaction to json value");
+            return;
+        }
+    };
+    
     let db = crate::get_db().await;
     match sqlx::query!("SELECT give_role_id FROM role_reactions
-WHERE role_reactions.guild_id = $1 AND role_reactions.message_id = $2
-", guild_id.get().cast_signed(), remove.reaction.message_id.get().cast_signed())
+WHERE role_reactions.guild_id = $1 AND role_reactions.message_id = $2 AND $3 = emoji
+", guild_id.get().cast_signed(), remove.reaction.message_id.get().cast_signed(), emoji)
         .fetch_optional(&db)
         .await
     {

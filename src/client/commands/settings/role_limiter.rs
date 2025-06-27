@@ -133,7 +133,7 @@ pub async fn remove(ctx: Context<'_>, #[min_length = 1] roles: Vec<RoleId>) -> R
         .execute(&db)
         .await?;
     let roles = roles.iter().fold(String::new(), |mut init, role|{
-        init.push_str(&format!("<@{role}>"));
+        init.push_str(&format!("<@&{role}>"));
         init
     });
     ctx.say(format!("Removed all Role Limits for the roles: {roles}")).await?;
