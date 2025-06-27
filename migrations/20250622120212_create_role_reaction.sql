@@ -16,7 +16,7 @@ CREATE FUNCTION role_limit_predicate(roles bigint[], bind_roles reaction_role_In
     STRICT
     PARALLEL SAFE
     LANGUAGE sql
-RETURN (SELECT bool_or(br.normal && role_limit_predicate.roles AND NOT br.negated <@ role_limit_predicate.roles ) FROM unnest(role_limit_predicate.bind_roles) as br);
+RETURN (SELECT bool_or(br.normal <@ role_limit_predicate.roles AND NOT br.negated <@ role_limit_predicate.roles ) FROM unnest(role_limit_predicate.bind_roles) as br);
 EXCEPTION
     WHEN duplicate_function THEN null;
 END $$;

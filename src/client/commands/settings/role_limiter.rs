@@ -30,9 +30,9 @@ pub async fn add(ctx: Context<'_>, role: RoleId, #[description = "! = NOT, & = A
     static REMOVE_WHITESPACE:LazyLock<regex::Regex> =  LazyLock::new(||regex::Regex::new(r#"[\s<@&>]*"#).expect("Invalid Regex"));
     let bind_roles = REMOVE_WHITESPACE.replace_all(&bind_roles, "");
     let mut bind_roles_parsed = BindRoles::default();
-    for and_items in bind_roles.split("&") {
+    for and_items in bind_roles.split("|") {
         let mut items = BindRolesOrs::default();
-        for or_item in and_items.split("|") {
+        for or_item in and_items.split("&") {
             let (inverted, role) = or_item.strip_prefix("!").map_or_else(||(false, or_item), |v|(true, v));
             log::debug!("Parsing role: {role}");
             let role:RoleId = role.parse()?;
