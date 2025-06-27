@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\nSELECT role_id, array_to_string(\n        array(SELECT\n                  '( ' || array_to_string(array_cat(\n                          array((SELECT '<@&'||v||'>' FROM unnest(t.normal) as v)),\n                          array((SELECT '!<@&'||v||'>' FROM unnest(t.negated) as v))\n                  ), ' & ') || ' )'\n              FROM unnest(bind_roles) as t\n        ), ' | ') as \"bind_roles!\"\nFROM role_limiter\nWHERE guild_id = $1 AND (cardinality($2::bigint[]) = 0  OR role_id = ANY($2))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "role_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "bind_roles!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "35805bd565c4f8385fd663f69dcee156aa8208e7cdf3e3c8568ee044f4096f5b"
+}

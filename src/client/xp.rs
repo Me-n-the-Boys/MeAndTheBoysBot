@@ -54,7 +54,7 @@ user_id.map(|v|crate::converti(v.get()))
             self.add_tmp_txt_xp(message.author.id, guild_id, xp).await;
         };
     }
-    pub(crate) async fn message_xp_react(&self, reaction: serenity::Reaction) {
+    pub(crate) async fn message_xp_react(&self, reaction: &serenity::Reaction) {
         let guild_id = match reaction.guild_id {
             Some(v) => v,
             None => return,
@@ -64,7 +64,7 @@ user_id.map(|v|crate::converti(v.get()))
         let mut xp = BASE_XP_REACT;
         if reaction.burst { xp*=2; }
         {
-            if let Some(member) = reaction.member {
+            if let Some(member) = &reaction.member {
                 self.apply_previous_message_xp(Some(member.user.id), Some(guild_id)).await;
                 self.add_tmp_txt_xp(member.user.id, guild_id, xp).await;
             }

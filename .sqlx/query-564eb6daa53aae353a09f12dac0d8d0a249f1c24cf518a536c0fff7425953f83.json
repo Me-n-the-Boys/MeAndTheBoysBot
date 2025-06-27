@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM public.role_limiter WHERE guild_id = $1 AND role_id = ANY($2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "564eb6daa53aae353a09f12dac0d8d0a249f1c24cf518a536c0fff7425953f83"
+}

@@ -1,6 +1,6 @@
 [package]
 name = "me-and-the-boys-dcbot"
-version = "0.1.7"
+version = "0.1.8"
 authors = ["C0D3 M4513R <28912031+C0D3-M4513R@users.noreply.github.com>"]
 edition = "2021"
 #include = ["src/**"]
@@ -34,6 +34,7 @@ scc = { version = "2.3.0", features = ["serde"] }
 #bot
 serenity = { version = "^0.12", features = ["cache", "temp_cache", "framework", "standard_framework", "rustls_backend"] }
 poise = "0.6.1"
+regex = "1.11.1" #input splitting/validation
 
 #Twitch Streaming notifications for bot
 twitch_api = { version = "0.7.0-rc.8", features = ["eventsub", "helix", "client", "reqwest"] }

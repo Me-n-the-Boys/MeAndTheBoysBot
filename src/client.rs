@@ -1,6 +1,8 @@
 mod temp_channels;
 mod xp;
 mod commands;
+mod role_limiter;
+mod role_reaction;
 
 use poise::serenity_prelude as serenity;
 use serenity::utils::validate_token;
@@ -62,8 +64,21 @@ impl serenity::client::RawEventHandler for Handler {
 
             Event::GuildMemberAdd(_) => {}
             Event::GuildMemberRemove(_) => {}
-            Event::GuildMemberUpdate(_) => {}
-            Event::GuildMembersChunk(_) => {}
+            Event::GuildMemberUpdate(event) => {
+                let member = match event.guild_id.member(&ctx, event.user.id).await {
+                    Ok(v) => v,
+                    Err(err) => {
+                        log::error!("Failed to get member to handle role_change: {err}");
+                        return;
+                    }
+                };
+                role_limiter::handle_role_change(&ctx, &member).await
+            }
+            Event::GuildMembersChunk(event) => {
+                for member in event.members.values() {
+                    role_limiter::handle_role_change(&ctx, &member).await;
+                }
+            }
 
             Event::VoiceStateUpdate(state) => {
                 let new_state = state.voice_state;
@@ -142,9 +157,14 @@ crate::converti(guild_id.get()), crate::converti(new_state.user_id.get())
             Event::MessageDelete(_) => {}
             Event::MessageDeleteBulk(_) => {}
             Event::ReactionAdd(add) => {
-                self.message_xp_react(add.reaction).await;
+                tokio::join!(
+                    role_reaction::add_reaction(&ctx, &add),
+                    self.message_xp_react(&add.reaction),
+                );
             }
-            Event::ReactionRemove(_) => {}
+            Event::ReactionRemove(remove) => {
+                role_reaction::remove_reaction(&ctx, &remove).await;
+            }
             Event::ReactionRemoveAll(_) => {}
             Event::ReactionRemoveEmoji(_) => {}
 
@@ -465,7 +485,7 @@ pub async fn init_client() -> ::anyhow::Result<serenity::Client> {
     let handler = Handler{
         pool: crate::get_db().await,
     };
-    let client = serenity::Client::builder(&token, GatewayIntents::default().union(GatewayIntents::MESSAGE_CONTENT))
+    let client = serenity::Client::builder(&token, GatewayIntents::default().union(GatewayIntents::MESSAGE_CONTENT).union(GatewayIntents::GUILD_MEMBERS))
         .framework(framework)
         .raw_event_handler(handler.clone())
         .await?;

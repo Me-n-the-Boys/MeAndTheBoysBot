@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT role_id FROM role_limiter WHERE guild_id = $1 AND role_id = ANY($2) AND NOT role_limit_predicate($2, bind_roles)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "role_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "31d212d97b794eb266796aa30b1915485c749ebe6a69c68a6047eecf7d597a14"
+}

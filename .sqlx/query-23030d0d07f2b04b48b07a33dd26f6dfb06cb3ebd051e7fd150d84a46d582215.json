@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO public.role_reactions (guild_id, message_id, emoji, give_role_id, channel_id) VALUES ($1, $2, $3, $4, $5)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Jsonb",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "23030d0d07f2b04b48b07a33dd26f6dfb06cb3ebd051e7fd150d84a46d582215"
+}

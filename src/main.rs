@@ -154,6 +154,10 @@ pub(crate) async fn get_db<'a>() -> sqlx::PgPool {
         let options = sqlx::postgres::PgConnectOptions::new();
         let pool = sqlx::Pool::connect_with(options).await.expect("Failed to connect to postgres");
         log::info!("Connected to postgres");
+        sqlx::migrate!()
+            .run(&pool)
+            .await
+            .expect("Failed to run Migrations");
         pool
     }).await.clone()
 }
