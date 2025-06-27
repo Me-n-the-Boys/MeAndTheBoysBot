@@ -1,5 +1,5 @@
 use std::sync::LazyLock;
-use serenity::all::{ChunkGuildFilter, RoleId};
+use serenity::all::{ChunkGuildFilter, CreateAllowedMentions, RoleId};
 use crate::client::commands::{Context, Error};
 use crate::client::role_limiter::{BindRoles, BindRolesOrs};
 
@@ -54,13 +54,17 @@ pub async fn add(ctx: Context<'_>, role: RoleId, #[description = "! = NOT, & = A
     sqlx::query!(r#"INSERT INTO public.role_limiter (guild_id, role_id, bind_roles) VALUES ($1, $2, (SELECT bind from jsonb_to_record($3) as t(bind reaction_role_InnerBoolFormula[]) ))"#, guild_id.get().cast_signed(), role.get().cast_signed(), bound_roles)
         .execute(&db)
         .await?;
-    ctx.say("Added the new Role-Reaction. It has not yet been applied to guild members.").await?;
+    ctx.send(
+        poise::CreateReply::default()
+            .content(format!("Added a new Role-Limit for the Role <@&{role}>. The Limit has not yet been applied to any existing guild member."))
+            .reply(true)
+            .allowed_mentions(CreateAllowedMentions::default())
+    ).await?;
 
     Ok(())
 }
 #[poise::command(
     slash_command,
-    ephemeral,
     default_member_permissions = "MANAGE_GUILD",
     required_permissions = "MANAGE_GUILD",
 )]
@@ -92,7 +96,7 @@ WHERE guild_id = $1 AND (cardinality($2::bigint[]) = 0  OR role_id = ANY($2))"#,
             init.push_str(&format!("- <@&{role_id}> is bound to: {bind_roles}\n"));
             init
         });
-    ctx.say(format!("The following Role-Limits exist: \n{roles}")).await?;
+    ctx.send(poise::CreateReply::default().content(format!("The following Role-Limits exist: \n{roles}")).reply(true).allowed_mentions(CreateAllowedMentions::default())).await?;
 
     Ok(())
 }
@@ -136,6 +140,11 @@ pub async fn remove(ctx: Context<'_>, #[min_length = 1] roles: Vec<RoleId>) -> R
         init.push_str(&format!("<@&{role}>"));
         init
     });
-    ctx.say(format!("Removed all Role Limits for the roles: {roles}")).await?;
+    ctx.send(
+        poise::CreateReply::default()
+            .content(format!("Removed all Role Limits for the roles: {roles}"))
+            .reply(true)
+            .allowed_mentions(CreateAllowedMentions::default())
+    ).await?;
     Ok(())
 }
