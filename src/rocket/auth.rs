@@ -82,7 +82,7 @@ fn refresh_tokens(auth: std::sync::Arc<Auth>) -> (tokio::task::JoinHandle<()>, t
         let auth = auth;
         let loop_work = ||async {
             tracing::info!("Refreshing Twitch Tokens");
-            let mut token = auth.twitch.auth.authentications.first_entry_async().await;
+            let mut token = auth.twitch.auth.authentications.begin_async().await;
             while let Some(mut entry) = token {
                 let user_id = entry.key().clone();
                 let valid = !entry.check_valid(&auth.twitch).await;

@@ -369,7 +369,7 @@ pub async fn migrate() -> ::anyhow::Result<()> {
             {
                 let db = crate::get_db().await;
                 let mut transaction = db.begin().await.expect("Failed to start transaction");
-                for (guild, handler) in handler.guilds.iter(&sdd::Guard::new()).map(|(guild, handler)|(*guild, handler.clone())).collect::<Vec<_>>().into_iter() {
+                for (guild, handler) in handler.guilds.iter(&scc::Guard::new()).map(|(guild, handler)|(*guild, handler.clone())).collect::<Vec<_>>().into_iter() {
                     let guild = crate::converti(guild.get());
                     sqlx::query!("INSERT INTO guilds (guild_id) VALUES ($1) ON CONFLICT DO NOTHING", guild).execute(&mut *transaction).await?;
                     let creator_channel = handler.creator_channel.load(std::sync::atomic::Ordering::Acquire);
@@ -393,15 +393,15 @@ pub async fn migrate() -> ::anyhow::Result<()> {
                         sqlx::query!("INSERT INTO temp_channels (guild_id, creator_channel, create_category, delete_non_created_channels, delete_delay) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
                     guild, creator_channel, create_category, delete_non_created_channels, delete_delay).execute(&mut *transaction).await?;
                     }
-                    for (channel, ()) in handler.created_channels.iter(&sdd::Guard::new()).map(|(channel, _)|(*channel, ())).collect::<Vec<_>>().into_iter() {
+                    for (channel, ()) in handler.created_channels.iter(&scc::Guard::new()).map(|(channel, _)|(*channel, ())).collect::<Vec<_>>().into_iter() {
                         let channel = crate::converti(channel.get());
                         sqlx::query!("INSERT INTO temp_channels_created (guild_id, channel_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", guild, channel).execute(&mut *transaction).await?;
                     }
-                    for (channel, _) in handler.creator_ignore_channels.iter(&sdd::Guard::new()).map(|(channel, ())|(*channel, ())).collect::<Vec<_>>().into_iter() {
+                    for (channel, _) in handler.creator_ignore_channels.iter(&scc::Guard::new()).map(|(channel, ())|(*channel, ())).collect::<Vec<_>>().into_iter() {
                         let channel = crate::converti(channel.get());
                         sqlx::query!("INSERT INTO temp_channels_ignore (guild_id, channel_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", guild, channel).execute(&mut *transaction).await?;
                     }
-                    for (channel, _) in handler.xp_ignored_channels.iter(&sdd::Guard::new()).map(|(channel, ())|(*channel, ())).collect::<Vec<_>>().into_iter() {
+                    for (channel, _) in handler.xp_ignored_channels.iter(&scc::Guard::new()).map(|(channel, ())|(*channel, ())).collect::<Vec<_>>().into_iter() {
                         let channel = crate::converti(channel.get());
                         sqlx::query!("INSERT INTO xp_channels_ignored (guild_id, channel_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", guild, channel).execute(&mut *transaction).await?;
                     }
@@ -426,14 +426,14 @@ pub async fn migrate() -> ::anyhow::Result<()> {
                     let mut xp = std::collections::HashMap::<_, (Option<u64>, Option<i64>)>::new();
                     let mut xp_txt_tmp = std::collections::HashMap::new();
                     {
-                        let mut next_entry = handler.xp_vc.first_entry_async().await;
+                        let mut next_entry = handler.xp_vc.begin_async().await;
                         while let Some(entry) = next_entry {
                             let user = *entry.key();
                             let vc_xp = *entry;
                             xp.entry(user).or_default().0 = Some(vc_xp);
                             next_entry = entry.next_async().await;
                         }
-                        let mut next_entry = handler.xp_txt.first_entry_async().await;
+                        let mut next_entry = handler.xp_txt.begin_async().await;
                         while let Some(entry) = next_entry {
                             let user = *entry.key();
                             let xp_txt = *entry;
