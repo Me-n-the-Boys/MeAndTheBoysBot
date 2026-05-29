@@ -2,6 +2,7 @@ mod client;
 mod twitch_client;
 mod rocket;
 mod discord_client;
+mod template;
 
 use ::rocket::{Orbit, Rocket};
 

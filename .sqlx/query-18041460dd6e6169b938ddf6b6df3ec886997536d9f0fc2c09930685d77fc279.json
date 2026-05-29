@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO twitch_channel (guild, channel_id, add_self) VALUES ($1, $2, $3) ON CONFLICT (guild, channel_id) DO UPDATE SET add_self = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "18041460dd6e6169b938ddf6b6df3ec886997536d9f0fc2c09930685d77fc279"
+}

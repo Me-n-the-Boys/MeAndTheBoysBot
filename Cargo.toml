@@ -41,6 +41,9 @@ reqwest = { version = "0.12.12", default-features = false, features = ["rustls-t
 url = "2.5.4"
 base64 = "0.22.1"
 
+#Templating Enging
+askama = "0.15.1"
+
 #Getting Streaming Notifications via Webhooks
 rocket = { version = "0.5.1" , features = ["secrets"]}
 

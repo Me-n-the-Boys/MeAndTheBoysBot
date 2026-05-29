@@ -1,6 +1,7 @@
 mod temporary_channels;
 mod reaction_roles;
 mod role_limiter;
+mod twitch_channel;
 
 use temporary_channels::temporary_channels;
 use reaction_roles::reaction_roles;

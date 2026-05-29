@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use askama::Template;
 
 #[rocket::get("/", rank = 1)]
 pub async fn index_none<'r>(
@@ -17,28 +18,17 @@ pub async fn index<'r>(
     _auth: &rocket::State<Arc<crate::rocket::auth::Auth>>,
     discord_session: super::discord::oauth::session::Session,
     twitch_session: super::twitch::oauth::session::Session,
-) -> rocket::response::content::RawHtml<String> {
+) -> Result<rocket::response::content::RawHtml<String>, askama::Error> {
     let discord_name = &discord_session.current_user.name;
     let twitch_name = &twitch_session.auth.login;
     let twitch_id = &twitch_session.auth.user_id;
-    rocket::response::content::RawHtml(format!(r#"
-<!DOCTYPE html>
-<html lang="en">
-    <head>
-        <meta charset="utf-8">
-        <meta name="color-scheme" content="light dark">
-        <title>Hello World</title>
-    </head>
-    <body>
-        <h1>Hello World</h1>
-        <p>You are successfully logged in as:</p>
-        <ul>
-            <li>Twitch: {twitch_name} ({twitch_id})</li>
-            <li>Discord: {discord_name}</li>
-        </ul>
-    </body>
-</html>
-"#))
+
+    crate::template::dashboard::Dashboard{
+        twitch_name,
+        twitch_id,
+        discord_name
+    }.render()
+        .map(rocket::response::content::RawHtml)
 }
 
 async fn decorate_channel(channel: &serenity::model::id::ChannelId, value: &(bool, chrono::DateTime<chrono::Utc>), dc: &crate::discord_client::DiscordClient) -> Option<String> {

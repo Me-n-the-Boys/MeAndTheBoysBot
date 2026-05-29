@@ -14,6 +14,7 @@ pub async fn oauth_ok(code: &str, scope: &str, state: &str, csrf: Result<csrf::C
     let _ = scope;
     let auth = match auth {
         Err(err) => return Responder::NoAuth(err),
+        Err(err) => return Responder::NoAuth(err),
         Ok(auth) => auth,
     };
     match csrf {
@@ -45,6 +46,10 @@ pub async fn oauth_ok(code: &str, scope: &str, state: &str, csrf: Result<csrf::C
                 },
             }
             auth.twitch.auth.authentications.upsert_async(token.user_id.clone(), From::from(token.clone())).await;
+            let db = crate::get_db().await;
+            if let Err(error) = sqlx::query!("INSERT INTO twitch_user (username) VALUES ($1)", token.login.as_str()).execute(&db).await {
+                log::error!("error inserting twitch username: {error:?}");
+            }
             Responder::Ok(rocket::response::Redirect::to("/twitch"))
         },
         Err(err) => {
