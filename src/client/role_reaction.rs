@@ -12,7 +12,7 @@ pub async fn add_reaction(ctx: &'_ Context, add: &ReactionAddEvent) {
     let emoji = match serde_json::to_value(&add.reaction.emoji) {
         Ok(v) => v,
         Err(err) => {
-            log::error!("Error whilst converting reaction to json value");
+            log::error!("Error whilst converting reaction to json value: {err}");
             return;
         }
     };
@@ -53,7 +53,7 @@ pub async fn remove_reaction(ctx: &'_ Context, remove: &ReactionRemoveEvent) {
     let emoji = match serde_json::to_value(&remove.reaction.emoji) {
         Ok(v) => v,
         Err(err) => {
-            log::error!("Error whilst converting reaction to json value");
+            log::error!("Error whilst converting reaction to json value: {err}");
             return;
         }
     };

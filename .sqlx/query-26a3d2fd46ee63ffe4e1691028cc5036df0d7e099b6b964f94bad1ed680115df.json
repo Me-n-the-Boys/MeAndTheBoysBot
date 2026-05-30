@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO public.autobanchannels (guild_id, channel, dmd) VALUES ($1, $2, $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "26a3d2fd46ee63ffe4e1691028cc5036df0d7e099b6b964f94bad1ed680115df"
+}

@@ -3,6 +3,7 @@ mod xp;
 mod commands;
 mod role_limiter;
 mod role_reaction;
+pub mod auto_bans;
 
 use poise::serenity_prelude as serenity;
 use serenity::utils::validate_token;
@@ -72,11 +73,17 @@ impl serenity::client::RawEventHandler for Handler {
                         return;
                     }
                 };
-                role_limiter::handle_role_change(&ctx, &member).await
+                tokio::join!(
+                    role_limiter::handle_role_change(&ctx, &member),
+                    self.auto_bans_roles(&ctx, member.guild_id, member.user.id, &member.roles),
+                );
             }
             Event::GuildMembersChunk(event) => {
                 for member in event.members.values() {
-                    role_limiter::handle_role_change(&ctx, &member).await;
+                    tokio::join!(
+                        role_limiter::handle_role_change(&ctx, &member),
+                        self.auto_bans_roles(&ctx, member.guild_id, member.user.id, &member.roles),
+                    );
                 }
             }
 
@@ -151,7 +158,10 @@ crate::converti(guild_id.get()), crate::converti(new_state.user_id.get())
             Event::VoiceChannelStatusUpdate(_) => {}
 
             Event::MessageCreate(create) => {
-                self.message_xp(create.message).await;
+                tokio::join!(
+                    self.message_xp(&create.message),
+                    self.auto_bans_message(&ctx, &create.message),
+                );
             }
             Event::MessageUpdate(_) => {}
             Event::MessageDelete(_) => {}

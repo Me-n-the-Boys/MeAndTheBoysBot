@@ -38,7 +38,7 @@ user_id.map(|v|crate::converti(v.get()))
             }
         }
     }
-    pub(in super) async fn message_xp(&self, message: serenity::Message) {
+    pub(in super) async fn message_xp(&self, message: &serenity::Message) {
         let guild_id = match message.guild_id {
             Some(v) => v,
             None => return,

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM public.autobanchannels WHERE guild_id = $1 AND channel = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f6b0beb58612d9322b8262878f2f0159aed9b27e3e201a7cdf939f66b29583d9"
+}

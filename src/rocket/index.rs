@@ -13,7 +13,7 @@ pub async fn index_none<'r>(
     }
 }
 
-#[rocket::get("/", rank = 0)]
+// #[rocket::get("/", rank = 0)] //TODO: Fix error
 pub async fn index<'r>(
     _auth: &rocket::State<Arc<crate::rocket::auth::Auth>>,
     discord_session: super::discord::oauth::session::Session,

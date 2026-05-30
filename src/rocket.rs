@@ -16,7 +16,7 @@ pub(crate) const BASE_URL: &'static str = "twitch.meandtheboys.c0d3m4513r.com";
 pub(in super) async fn launch() -> anyhow::Result<(rocket::Rocket<rocket::Build>, serenity::Client, (tokio::task::JoinHandle<()>, tokio::sync::oneshot::Sender<()>))> {
     let rocket = rocket::build()
         .mount("/", rocket::routes![
-            index::index,
+            // index::index, //TODO: Fix return
             index::index_none,
             twitch::webhook::webhook,
             twitch::oauth::new::new_oauth,

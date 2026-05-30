@@ -14,7 +14,6 @@ pub async fn oauth_ok(code: &str, scope: &str, state: &str, csrf: Result<csrf::C
     let _ = scope;
     let auth = match auth {
         Err(err) => return Responder::NoAuth(err),
-        Err(err) => return Responder::NoAuth(err),
         Ok(auth) => auth,
     };
     match csrf {

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT dmd FROM public.autobanchannels WHERE guild_id = $1 AND channel = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "dmd",
+        "type_info": "Int2"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8a3e5c5d6fbc163388b33a8f1b4113d04a40cc58c3c22b67cc99f600139f5f40"
+}
